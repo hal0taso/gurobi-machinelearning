@@ -15,7 +15,6 @@ this module checks:
   number of distinct split thresholds — independent of the number of trees.
 """
 
-import itertools
 import unittest
 import warnings
 
@@ -27,6 +26,12 @@ from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.tree import DecisionTreeRegressor
 
 from gurobi_ml import add_predictor_constr
+
+from ..tree_ensemble import (
+    representable_cells,
+    thresholds_by_feature,
+    ties_duplicated_threshold,
+)
 
 # Cross-formulation comparisons must run at the default epsilon=0: a positive
 # epsilon has a different scope per formulation — path-wise in "leaf" but
@@ -50,62 +55,18 @@ def _sklearn_trees(predictor):
     return [predictor.tree_]
 
 
-def _thresholds_by_feature(predictor):
-    """Collect each feature's split thresholds over all trees of predictor."""
-    thresholds = {}
+def _tree_pairs(predictor):
+    """The (feature, threshold) pairs of each tree of predictor.
+
+    sklearn's ``predict`` casts inputs to float32 before comparing them to
+    the (float64) thresholds, hence the float32-aware helpers in
+    ``tests.tree_ensemble``.
+    """
+    pairs = []
     for tree in _sklearn_trees(predictor):
         split_nodes = tree.children_left >= 0
-        for feature, threshold in zip(
-            tree.feature[split_nodes], tree.threshold[split_nodes]
-        ):
-            thresholds.setdefault(feature, set()).add(threshold)
-    return thresholds
-
-
-def _ties_duplicated_threshold(predictor, x_star, feas_tol):
-    """True if x_star ties a threshold that appears in more than one tree.
-
-    Trees fitted on resamples of the same data reuse the exact same split
-    thresholds (midpoints of the same value pairs). When ``x_star`` sits
-    exactly on such a threshold, the leaf formulation — whose trees branch
-    independently — may route different trees to different sides: a branch
-    combination no real input reproduces. Optima equality across
-    formulations is only asserted without such a tie.
-    """
-    seen, duplicated = set(), set()
-    for tree in _sklearn_trees(predictor):
-        split_nodes = tree.children_left >= 0
-        pairs = set(zip(tree.feature[split_nodes], tree.threshold[split_nodes]))
-        duplicated |= pairs & seen
-        seen |= pairs
-    for feature, threshold in duplicated:
-        tie_tol = max(feas_tol, float(np.spacing(np.float32(threshold))))
-        if abs(x_star[feature] - threshold) <= tie_tol:
-            return True
-    return False
-
-
-def _representable_cells(x_star, thresholds, feas_tol):
-    """Points of every threshold cell that x_star can represent.
-
-    The solution's own cell, plus both adjacent cells for every coordinate
-    that ties with a split threshold (the solver may have taken either branch
-    at such a knife edge).  sklearn's ``predict`` casts inputs to float32
-    before comparing them to the (float64) thresholds, so the tie window and
-    the points probing both sides of a threshold must be one float32 ulp
-    wide — a float64 ulp would be erased by the cast.
-    """
-    candidates = []
-    for feature, value in enumerate(x_star):
-        coordinate_candidates = [value]
-        for threshold in thresholds.get(feature, ()):
-            tie_tol = max(feas_tol, float(np.spacing(np.float32(threshold))))
-            if abs(value - threshold) <= tie_tol:
-                below = float(np.nextafter(np.float32(threshold), np.float32(-np.inf)))
-                above = float(np.nextafter(np.float32(threshold), np.float32(np.inf)))
-                coordinate_candidates += [below, above]
-        candidates.append(coordinate_candidates)
-    return np.array(list(itertools.product(*candidates)))
+        pairs.append(set(zip(tree.feature[split_nodes], tree.threshold[split_nodes])))
+    return pairs
 
 
 class TestCrossFormulationAgreement(unittest.TestCase):
@@ -140,8 +101,8 @@ class TestCrossFormulationAgreement(unittest.TestCase):
     def _assert_predict_reproduces(self, predictor, objective, x_star, feas_tol):
         """The MIP optimum must be attained by ``predict`` on one of the
         threshold cells the solution can represent."""
-        cells = _representable_cells(
-            x_star, _thresholds_by_feature(predictor), feas_tol
+        cells = representable_cells(
+            x_star, thresholds_by_feature(_tree_pairs(predictor)), feas_tol
         )
         predictions = predictor.predict(cells)
         tolerance = 1e-4 * (1.0 + abs(objective))
@@ -200,7 +161,9 @@ class TestCrossFormulationAgreement(unittest.TestCase):
                         # formulation cannot mix branches across trees: the
                         # optima must agree and the leaf optimum must also
                         # correspond to a real input.
-                        if not _ties_duplicated_threshold(predictor, x_leaf, feas_tol):
+                        if not ties_duplicated_threshold(
+                            _tree_pairs(predictor), x_leaf, feas_tol
+                        ):
                             self.assertLessEqual(abs(obj_leaf - obj_misic), tolerance)
                             self._assert_predict_reproduces(
                                 predictor, obj_leaf, x_leaf, feas_tol
@@ -395,7 +358,7 @@ class TestModelSize(unittest.TestCase):
             ).fit(X, y)
 
             trees = _sklearn_trees(predictor)
-            thresholds = _thresholds_by_feature(predictor)
+            thresholds = thresholds_by_feature(_tree_pairs(predictor))
             n_shared = sum(len(values) for values in thresholds.values())
             n_splits = sum(int((tree.children_left >= 0).sum()) for tree in trees)
             n_leaves = sum(int((tree.children_left < 0).sum()) for tree in trees)

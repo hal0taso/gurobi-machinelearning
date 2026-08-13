@@ -58,10 +58,16 @@ class TestXGBoosthModel(FixedRegressionModel):
         xgb_reg.fit(X, y)
         one_case = {"predictor": xgb_reg, "nonconvex": 0}
 
-        for formulation in ["leaf"]:
-            self.do_one_case(
-                one_case, X, 3, formulation=formulation, float_type=np.float32
-            )
+        for formulation in ["leaf", "misic"]:
+            kwargs = {"formulation": formulation, "float_type": np.float32}
+            if formulation == "misic":
+                # XGBoost thresholds sit at data values, so the tight test
+                # boxes contain thresholds and epsilon=0 knife edges are
+                # systematic; with the extraction's threshold shift a
+                # positive epsilon matches XGBoost's strict `x < t` exactly
+                # (the ensemble formulation warns about global epsilon).
+                kwargs["epsilon"] = 1e-5
+            self.do_one_case(one_case, X, 3, **kwargs)
 
     @staticmethod
     def prepare_binary_iris():
@@ -76,10 +82,12 @@ class TestXGBoosthModel(FixedRegressionModel):
 
     def run_iris_test_case(self, predictor, X, method):
         one_case = {"predictor": predictor, "nonconvex": 0}
-        for formulation in ["leaf"]:
-            self.do_one_case(
-                one_case, X, 6, method, formulation=formulation, float_type=np.float32
-            )
+        for formulation in ["leaf", "misic"]:
+            kwargs = {"formulation": formulation, "float_type": np.float32}
+            if formulation == "misic":
+                # See test_diabetes_xgboost for why misic uses epsilon here.
+                kwargs["epsilon"] = 1e-5
+            self.do_one_case(one_case, X, 6, method, **kwargs)
 
     def test_iris_xgboost_pipeline(self):
         if gp.gurobi.version()[0] < 11:

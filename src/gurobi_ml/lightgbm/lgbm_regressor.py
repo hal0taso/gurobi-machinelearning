@@ -25,7 +25,11 @@ from gurobipy import GRB
 
 from ..exceptions import ModelConfigurationError, NoSolutionError
 from ..modeling import AbstractPredictorConstr
-from ..modeling.decision_tree import AbstractTreeEstimator
+from ..modeling.decision_tree import (
+    ENSEMBLE_FORMULATIONS,
+    AbstractTreeEstimator,
+    add_tree_ensemble_formulation,
+)
 
 
 def add_lgbmregressor_constr(
@@ -328,6 +332,27 @@ class LGBMConstr(AbstractPredictorConstr):
         trees_raw = lgbm_raw["tree_info"]
 
         n_estimators = len(trees_raw)
+
+        formulation = kwargs.get("formulation", "leaf")
+        if formulation in ENSEMBLE_FORMULATIONS:
+            trees = []
+            for tree in trees_raw:
+                flat_tree = self._flat_tree_representation(tree["tree_structure"])
+                flat_tree["n_features"] = lgbm_raw["max_feature_idx"] + 1
+                trees.append(flat_tree)
+            add_tree_ensemble_formulation(
+                model,
+                trees,
+                np.ones(n_estimators),
+                0.0,
+                _input,
+                output,
+                formulation,
+                self.epsilon,
+                self._name_var,
+                safety_floor=self.safety_floor,
+            )
+            return
 
         estimators = []
         if self._no_debug:

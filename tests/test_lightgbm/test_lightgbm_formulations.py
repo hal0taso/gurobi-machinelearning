@@ -57,7 +57,7 @@ class TestLGBMhModel(FixedRegressionModel):
         lgbm_reg.fit(X, y)
         one_case = {"predictor": lgbm_reg, "nonconvex": 0}
 
-        for formulation in ["leaf"]:
+        for formulation in ["leaf", "misic"]:
             self.do_one_case(
                 one_case, X, 3, formulation=formulation, float_type=np.float32
             )

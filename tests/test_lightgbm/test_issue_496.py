@@ -39,23 +39,35 @@ class TestIssue496(unittest.TestCase):
 
     def test_numerical_issue_leaf_formulation(self):
         """Verify that a warning is raised when thresholds fall below FeasibilityTol."""
-        with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
-            x_vars = m.addMVar(shape=5, lb=-10.0, ub=10.0, name="x")
-            y_var = m.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, name="score")
-            with self.assertWarns(UserWarning):
-                add_lgbm_booster_constr(
-                    m, self.model, x_vars, y_var, formulation="leaf"
-                )
+        for formulation in ("leaf", "misic"):
+            with self.subTest(formulation=formulation):
+                with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
+                    x_vars = m.addMVar(shape=5, lb=-10.0, ub=10.0, name="x")
+                    y_var = m.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, name="score")
+                    with self.assertWarns(UserWarning):
+                        add_lgbm_booster_constr(
+                            m, self.model, x_vars, y_var, formulation=formulation
+                        )
 
     def test_leaf_formulation_fix(self):
-        """Verify that the leaf formulation with safety_floor fixes the numerical issue."""
+        """Verify that the formulations with safety_floor fix the numerical issue."""
+        for formulation in ("leaf", "misic"):
+            with self.subTest(formulation=formulation):
+                self._check_safety_floor_fix(formulation)
+
+    def _check_safety_floor_fix(self, formulation):
         with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
             x_vars = m.addMVar(shape=5, lb=-10.0, ub=10.0, name="x")
             y_var = m.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, name="score")
 
-            # Use leaf formulation with safety_floor to avoid the issue
+            # Use the formulation with safety_floor to avoid the issue
             add_lgbm_booster_constr(
-                m, self.model, x_vars, y_var, formulation="leaf", safety_floor=1e-5
+                m,
+                self.model,
+                x_vars,
+                y_var,
+                formulation=formulation,
+                safety_floor=1e-5,
             )
             m.update()
 
