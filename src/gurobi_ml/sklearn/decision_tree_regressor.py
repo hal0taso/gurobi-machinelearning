@@ -18,8 +18,57 @@
 in a :external+gurobi:py:class:`Model`.
 """
 
-from ..modeling.decision_tree import AbstractTreeEstimator
+from ..modeling.decision_tree import (
+    AbstractTreeEstimator,
+    add_tree_ensemble_formulation,
+)
 from .skgetter import SKgetter
+
+
+def _sklearn_tree_to_dict(tree):
+    """Convert a fitted scikit-learn ``Tree`` to the dict representation used
+    by :py:class:`gurobi_ml.modeling.decision_tree.AbstractTreeEstimator`."""
+    return {
+        "children_left": tree.children_left,
+        "children_right": tree.children_right,
+        "feature": tree.feature,
+        "threshold": tree.threshold,
+        "value": tree.value[:, :, 0],
+        "capacity": tree.capacity,
+        "n_features": tree.n_features,
+    }
+
+
+def _add_sklearn_tree_ensemble_formulation(
+    gp_model,
+    estimators,
+    weights,
+    constant,
+    input_vars,
+    output_vars,
+    formulation,
+    epsilon,
+    name_var,
+    safety_floor=0.0,
+):
+    """Formulate a list of fitted sklearn decision trees as one ensemble.
+
+    Shared by the gradient boosting and random forest classes; they differ
+    only in weights and constant.
+    """
+    trees = [_sklearn_tree_to_dict(estimator.tree_) for estimator in estimators]
+    add_tree_ensemble_formulation(
+        gp_model,
+        trees,
+        weights,
+        constant,
+        input_vars,
+        output_vars,
+        formulation,
+        epsilon,
+        name_var,
+        safety_floor=safety_floor,
+    )
 
 
 def add_decision_tree_regressor_constr(
@@ -120,17 +169,7 @@ class DecisionTreeRegressorConstr(SKgetter, AbstractTreeEstimator):
         self._default_name = "tree_reg"
 
         SKgetter.__init__(self, predictor, input_vars)
-        tree = self.predictor.tree_
-
-        tree_dict = {
-            "children_left": tree.children_left,
-            "children_right": tree.children_right,
-            "feature": tree.feature,
-            "threshold": tree.threshold,
-            "value": tree.value[:, :, 0],
-            "capacity": tree.capacity,
-            "n_features": tree.n_features,
-        }
+        tree_dict = _sklearn_tree_to_dict(self.predictor.tree_)
         AbstractTreeEstimator.__init__(
             self,
             gp_model,

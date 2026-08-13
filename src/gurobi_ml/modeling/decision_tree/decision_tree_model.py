@@ -342,6 +342,13 @@ class AbstractTreeEstimator(AbstractPredictorConstr):
         )
 
     def _mip_model(self, **kwargs):
+        # Imported here to avoid a circular import: the ensemble formulations
+        # build on helpers defined in this module.
+        from .ensemble_model import (
+            ENSEMBLE_FORMULATIONS,
+            add_tree_ensemble_formulation,
+        )
+
         if self._formulation in ("leafs", "leaf"):
             _leafs_formulation(
                 self.gp_model,
@@ -360,6 +367,20 @@ class AbstractTreeEstimator(AbstractPredictorConstr):
                 self.input,
                 self.output,
                 self._tree,
+                self._epsilon,
+                self._name_var,
+                self._safety_floor,
+            )
+        elif self._formulation in ENSEMBLE_FORMULATIONS:
+            # A lone decision tree is an ensemble of one tree.
+            add_tree_ensemble_formulation(
+                self.gp_model,
+                [self._tree],
+                np.ones(1),
+                0.0,
+                self.input,
+                self.output,
+                self._formulation,
                 self._epsilon,
                 self._name_var,
                 self._safety_floor,

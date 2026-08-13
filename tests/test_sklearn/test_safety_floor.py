@@ -7,9 +7,16 @@ from sklearn.tree import DecisionTreeRegressor
 
 from gurobi_ml.sklearn import add_decision_tree_regressor_constr
 
+FORMULATIONS = ("leaf", "misic")
+
 
 class TestSafetyFloor(unittest.TestCase):
     def test_safety_floor(self):
+        for formulation in FORMULATIONS:
+            with self.subTest(formulation=formulation):
+                self._check_safety_floor(formulation)
+
+    def _check_safety_floor(self, formulation):
         # Create a simple decision tree with a threshold close to zero
         X = np.array([[0.0], [1.0]])
         y = np.array([0.0, 1.0])
@@ -22,7 +29,9 @@ class TestSafetyFloor(unittest.TestCase):
         # Test without safety_floor (threshold should be 0.00001)
         with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
             x_var = m.addMVar((1, 1), lb=0, ub=1)
-            pred = add_decision_tree_regressor_constr(m, dt, x_var, epsilon=0.0)
+            pred = add_decision_tree_regressor_constr(
+                m, dt, x_var, epsilon=0.0, formulation=formulation
+            )
 
             # The split is x <= 0.00001
             # If x = 0.000005, it should go to left leaf
@@ -35,7 +44,7 @@ class TestSafetyFloor(unittest.TestCase):
         with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
             x_var = m.addMVar((1, 1), lb=0, ub=1)
             pred = add_decision_tree_regressor_constr(
-                m, dt, x_var, epsilon=0.0, safety_floor=0.01
+                m, dt, x_var, epsilon=0.0, safety_floor=0.01, formulation=formulation
             )
 
             # Now the split should be x <= 0.01
@@ -61,7 +70,9 @@ class TestSafetyFloor(unittest.TestCase):
         # Verify without safety_floor it goes to right leaf
         with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
             x_var = m.addMVar((1, 1), lb=0, ub=1)
-            pred = add_decision_tree_regressor_constr(m, dt, x_var, epsilon=0.0)
+            pred = add_decision_tree_regressor_constr(
+                m, dt, x_var, epsilon=0.0, formulation=formulation
+            )
             x_var.setAttr(GRB.Attr.LB, 0.005)
             x_var.setAttr(GRB.Attr.UB, 0.005)
             m.optimize()
@@ -79,12 +90,16 @@ class TestSafetyFloor(unittest.TestCase):
 
         # Test without safety_floor (safety_floor=0.0)
         # We expect a warning because 1e-9 < 1e-6 (default FeasibilityTol)
-        with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
-            x_var = m.addMVar((1, 1), lb=0, ub=1)
-            with self.assertWarnsRegex(
-                UserWarning, "smaller than Gurobi's feasibility tolerance"
-            ):
-                add_decision_tree_regressor_constr(m, dt, x_var, epsilon=0.0)
+        for formulation in FORMULATIONS:
+            with self.subTest(formulation=formulation):
+                with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
+                    x_var = m.addMVar((1, 1), lb=0, ub=1)
+                    with self.assertWarnsRegex(
+                        UserWarning, "smaller than Gurobi's feasibility tolerance"
+                    ):
+                        add_decision_tree_regressor_constr(
+                            m, dt, x_var, epsilon=0.0, formulation=formulation
+                        )
 
     def test_warning_custom_tolerance(self):
         # Create a simple decision tree with a threshold
@@ -95,23 +110,29 @@ class TestSafetyFloor(unittest.TestCase):
         # Set threshold to 1e-4
         dt.tree_.threshold[0] = 1e-4
 
-        # Test with FeasibilityTol = 1e-3
-        # 1e-4 < 1e-3, so we expect a warning
-        with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
-            m.Params.FeasibilityTol = 1e-3
-            x_var = m.addMVar((1, 1), lb=0, ub=1)
-            with self.assertWarnsRegex(
-                UserWarning, "smaller than Gurobi's feasibility tolerance"
-            ):
-                add_decision_tree_regressor_constr(m, dt, x_var, epsilon=0.0)
+        for formulation in FORMULATIONS:
+            with self.subTest(formulation=formulation):
+                # Test with FeasibilityTol = 1e-3
+                # 1e-4 < 1e-3, so we expect a warning
+                with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
+                    m.Params.FeasibilityTol = 1e-3
+                    x_var = m.addMVar((1, 1), lb=0, ub=1)
+                    with self.assertWarnsRegex(
+                        UserWarning, "smaller than Gurobi's feasibility tolerance"
+                    ):
+                        add_decision_tree_regressor_constr(
+                            m, dt, x_var, epsilon=0.0, formulation=formulation
+                        )
 
-        # Test with FeasibilityTol = 1e-5
-        # 1e-4 > 1e-5, so we expect NO warning
-        with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
-            m.Params.FeasibilityTol = 1e-5
-            x_var = m.addMVar((1, 1), lb=0, ub=1)
-            # This should not raise a warning
-            add_decision_tree_regressor_constr(m, dt, x_var, epsilon=0.0)
+                # Test with FeasibilityTol = 1e-5
+                # 1e-4 > 1e-5, so we expect NO warning
+                with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
+                    m.Params.FeasibilityTol = 1e-5
+                    x_var = m.addMVar((1, 1), lb=0, ub=1)
+                    # This should not raise a warning
+                    add_decision_tree_regressor_constr(
+                        m, dt, x_var, epsilon=0.0, formulation=formulation
+                    )
 
     def test_safety_floor_negative(self):
         # Create a simple decision tree with a threshold close to zero
@@ -122,33 +143,44 @@ class TestSafetyFloor(unittest.TestCase):
         # Manually set the threshold to a small negative value
         dt.tree_.threshold[0] = -0.00001
 
-        # Test with safety_floor = 0.01 (threshold should be clamped to -0.01)
-        with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
-            x_var = m.addMVar((1, 1), lb=-1, ub=0)
-            pred = add_decision_tree_regressor_constr(
-                m, dt, x_var, epsilon=0.0, safety_floor=0.01
-            )
+        for formulation in FORMULATIONS:
+            with self.subTest(formulation=formulation):
+                # Test with safety_floor = 0.01 (threshold should be clamped to -0.01)
+                with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
+                    x_var = m.addMVar((1, 1), lb=-1, ub=0)
+                    pred = add_decision_tree_regressor_constr(
+                        m,
+                        dt,
+                        x_var,
+                        epsilon=0.0,
+                        safety_floor=0.01,
+                        formulation=formulation,
+                    )
 
-            # Threshold -0.00001 -> abs is 0.00001 < 0.01 -> clamped to sign(-0.00001) * 0.01 = -0.01
-            # Split is x <= -0.01
+                    # Threshold -0.00001 -> abs is 0.00001 < 0.01 -> clamped to
+                    # sign(-0.00001) * 0.01 = -0.01
+                    # Split is x <= -0.01
 
-            # If x = -0.005, it is > -0.01, so it should go to RIGHT leaf (value 1.0)
-            x_var.setAttr(GRB.Attr.LB, -0.005)
-            x_var.setAttr(GRB.Attr.UB, -0.005)
-            m.optimize()
-            self.assertEqual(m.Status, GRB.OPTIMAL)
-            self.assertAlmostEqual(pred.output.X[0, 0], 1.0)
+                    # If x = -0.005, it is > -0.01, so it should go to RIGHT
+                    # leaf (value 1.0)
+                    x_var.setAttr(GRB.Attr.LB, -0.005)
+                    x_var.setAttr(GRB.Attr.UB, -0.005)
+                    m.optimize()
+                    self.assertEqual(m.Status, GRB.OPTIMAL)
+                    self.assertAlmostEqual(pred.output.X[0, 0], 1.0)
 
-        # Without safety_floor, x = -0.005 is > -0.00001? No, -0.005 < -0.00001.
-        # So x = -0.005 goes to LEFT leaf (value 0.0)
-        with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
-            x_var = m.addMVar((1, 1), lb=-1, ub=0)
-            pred = add_decision_tree_regressor_constr(m, dt, x_var, epsilon=0.0)
-            x_var.setAttr(GRB.Attr.LB, -0.005)
-            x_var.setAttr(GRB.Attr.UB, -0.005)
-            m.optimize()
-            self.assertEqual(m.Status, GRB.OPTIMAL)
-            self.assertAlmostEqual(pred.output.X[0, 0], 0.0)
+                # Without safety_floor, x = -0.005 is > -0.00001? No, -0.005 < -0.00001.
+                # So x = -0.005 goes to LEFT leaf (value 0.0)
+                with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
+                    x_var = m.addMVar((1, 1), lb=-1, ub=0)
+                    pred = add_decision_tree_regressor_constr(
+                        m, dt, x_var, epsilon=0.0, formulation=formulation
+                    )
+                    x_var.setAttr(GRB.Attr.LB, -0.005)
+                    x_var.setAttr(GRB.Attr.UB, -0.005)
+                    m.optimize()
+                    self.assertEqual(m.Status, GRB.OPTIMAL)
+                    self.assertAlmostEqual(pred.output.X[0, 0], 0.0)
 
 
 if __name__ == "__main__":

@@ -69,7 +69,9 @@ class TestSklearnModel(FixedRegressionModel):
                 actual_reg = regressor
             reg_name = type(actual_reg).__name__
             if reg_name in ["RandomForestRegressor", "GradientBoostingRegressor"]:
-                formulations = ["leaf"]
+                formulations = ["leaf", "misic"]
+            elif reg_name == "DecisionTreeRegressor":
+                formulations = [None, "misic"]
             else:
                 formulations = [None]
 
@@ -78,6 +80,12 @@ class TestSklearnModel(FixedRegressionModel):
                 kwargs = {"float_type": np.float32, "epsilon": 1e-5}
                 if formulation:
                     kwargs["formulation"] = formulation
+                if formulation == "misic":
+                    # Ensemble formulations apply epsilon globally (every
+                    # threshold, all trees); a positive value can exclude
+                    # derived pipeline features whose attainable range is
+                    # narrower than epsilon. Use the default.
+                    kwargs["epsilon"] = 0.0
 
                 self.do_one_case(onecase, X, 5, "all", **kwargs)
                 self.do_one_case(onecase, X, 6, "pairs", **kwargs)
@@ -157,9 +165,9 @@ class TestSklearnModel(FixedRegressionModel):
             reg_name = type(actual_reg).__name__
             if reg_name in ["RandomForestRegressor", "DecisionTreeRegressor"]:
                 if reg_name == "DecisionTreeRegressor":
-                    formulations = ["leafs", "paths"]
+                    formulations = ["leafs", "paths", "misic"]
                 else:
-                    formulations = ["leaf"]
+                    formulations = ["leaf", "misic"]
             else:
                 formulations = [None]
 

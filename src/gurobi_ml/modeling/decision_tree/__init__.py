@@ -14,3 +14,7 @@
 # ==============================================================================
 
 from .decision_tree_model import AbstractTreeEstimator as AbstractTreeEstimator
+from .ensemble_model import (
+    ENSEMBLE_FORMULATIONS as ENSEMBLE_FORMULATIONS,
+    add_tree_ensemble_formulation as add_tree_ensemble_formulation,
+)

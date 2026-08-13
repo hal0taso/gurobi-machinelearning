@@ -18,10 +18,15 @@
 into a :external+gurobi:py:class:`Model`.
 """
 
+import numpy as np
 from gurobipy import GRB
 
 from ..modeling import AbstractPredictorConstr
-from .decision_tree_regressor import add_decision_tree_regressor_constr
+from ..modeling.decision_tree import ENSEMBLE_FORMULATIONS
+from .decision_tree_regressor import (
+    _add_sklearn_tree_ensemble_formulation,
+    add_decision_tree_regressor_constr,
+)
 from .skgetter import SKgetter
 
 
@@ -118,6 +123,22 @@ class RandomForestRegressorConstr(SKgetter, AbstractPredictorConstr):
         _input = self._input
         output = self._output
         nex = _input.shape[0]
+
+        formulation = kwargs.get("formulation", "leaf")
+        if formulation in ENSEMBLE_FORMULATIONS:
+            _add_sklearn_tree_ensemble_formulation(
+                model,
+                predictor.estimators_,
+                np.full(predictor.n_estimators, 1.0 / predictor.n_estimators),
+                0.0,
+                _input,
+                output,
+                formulation,
+                kwargs.get("epsilon", 0.0),
+                self._name_var,
+                safety_floor=self.safety_floor,
+            )
+            return
 
         if self._no_debug:
             kwargs["no_record"] = True
