@@ -87,6 +87,34 @@ def _compute_leafs_bounds(gp_model, tree, feature_is_fixed, epsilon, safety_floo
     return (node_lb, node_ub)
 
 
+def _compute_reachability(
+    gp_model, tree, _input, feature_is_fixed, epsilon, nodes, safety_floor=0.0
+):
+    """Which examples can reach which of the given tree nodes.
+
+    A node is reachable for an example when the box of inputs routed to it
+    (from :py:func:`_compute_leafs_bounds`, so with the same epsilon and
+    ``feature_is_fixed`` semantics as the constraints) intersects the
+    example's input variable bounds.
+
+    Returns a boolean array of shape ``(n_examples, len(nodes))``.
+    """
+    (node_lb, node_ub) = _compute_leafs_bounds(
+        gp_model, tree, feature_is_fixed, epsilon, safety_floor
+    )
+    input_lb = _input.getAttr(GRB.Attr.LB)
+    input_ub = _input.getAttr(GRB.Attr.UB)
+
+    selected_lb = node_lb[:, nodes]  # (n_features, len(nodes))
+    selected_ub = node_ub[:, nodes]
+    reachability = np.ones((_input.shape[0], len(nodes)), dtype=bool)
+    for f in range(tree["n_features"]):
+        reachability &= (input_ub[:, f, None] >= selected_lb[f, None, :]) & (
+            input_lb[:, f, None] <= selected_ub[f, None, :]
+        )
+    return reachability
+
+
 def _leafs_formulation(
     gp_model, _input, output, tree, epsilon, _name_var, verbose, timer, safety_floor=0.0
 ):

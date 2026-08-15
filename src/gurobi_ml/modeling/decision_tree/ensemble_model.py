@@ -30,10 +30,14 @@ from warnings import warn
 import numpy as np
 
 from .misic import add_misic_tree
+from .ocean import OrdinalMuVariables, add_ocean_tree
+from .parmentier_vidal import add_parmentier_vidal_tree
 from .split_variables import SplitVariables
 
 _TREE_BUILDERS = {
     "misic": add_misic_tree,
+    "parmentier_vidal": add_parmentier_vidal_tree,
+    "ocean": add_ocean_tree,
 }
 
 #: Formulations handled by :py:func:`add_tree_ensemble_formulation`.
@@ -99,7 +103,10 @@ def add_tree_ensemble_formulation(
             UserWarning,
         )
 
-    split_vars = SplitVariables(
+    # The "ocean" variant shares continuous ordinal interval variables
+    # instead of binary split variables.
+    shared_variables = OrdinalMuVariables if formulation == "ocean" else SplitVariables
+    split_vars = shared_variables(
         gp_model, trees, _input, epsilon, _name_var, safety_floor
     )
 

@@ -38,22 +38,38 @@ class TestIssue496(unittest.TestCase):
         self.X = X
 
     def test_numerical_issue_leaf_formulation(self):
+        self._check_numerical_issue_warning("leaf")
+
+    def test_numerical_issue_misic(self):
+        self._check_numerical_issue_warning("misic")
+
+    def test_numerical_issue_parmentier_vidal(self):
+        self._check_numerical_issue_warning("parmentier_vidal")
+
+    def test_numerical_issue_ocean(self):
+        self._check_numerical_issue_warning("ocean")
+
+    def _check_numerical_issue_warning(self, formulation):
         """Verify that a warning is raised when thresholds fall below FeasibilityTol."""
-        for formulation in ("leaf", "misic"):
-            with self.subTest(formulation=formulation):
-                with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
-                    x_vars = m.addMVar(shape=5, lb=-10.0, ub=10.0, name="x")
-                    y_var = m.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, name="score")
-                    with self.assertWarns(UserWarning):
-                        add_lgbm_booster_constr(
-                            m, self.model, x_vars, y_var, formulation=formulation
-                        )
+        with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
+            x_vars = m.addMVar(shape=5, lb=-10.0, ub=10.0, name="x")
+            y_var = m.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, name="score")
+            with self.assertWarns(UserWarning):
+                add_lgbm_booster_constr(
+                    m, self.model, x_vars, y_var, formulation=formulation
+                )
 
     def test_leaf_formulation_fix(self):
-        """Verify that the formulations with safety_floor fix the numerical issue."""
-        for formulation in ("leaf", "misic"):
-            with self.subTest(formulation=formulation):
-                self._check_safety_floor_fix(formulation)
+        self._check_safety_floor_fix("leaf")
+
+    def test_misic_formulation_fix(self):
+        self._check_safety_floor_fix("misic")
+
+    def test_parmentier_vidal_formulation_fix(self):
+        self._check_safety_floor_fix("parmentier_vidal")
+
+    def test_ocean_formulation_fix(self):
+        self._check_safety_floor_fix("ocean")
 
     def _check_safety_floor_fix(self, formulation):
         with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:

@@ -22,7 +22,7 @@ https://arxiv.org/abs/1705.10883.
 import numpy as np
 from gurobipy import GRB
 
-from .decision_tree_model import _compute_leafs_bounds
+from .decision_tree_model import _compute_reachability
 
 
 def _leaf_intervals(tree):
@@ -94,24 +94,18 @@ def add_misic_tree(
         ``values`` are the output values of the reachable leaves.
     """
     nex = _input.shape[0]
-    n_features = tree["n_features"]
-
-    (node_lb, node_ub) = _compute_leafs_bounds(
-        gp_model, tree, split_vars.feature_is_fixed, epsilon, safety_floor
-    )
 
     leaves_order, first, last = _leaf_intervals(tree)
 
-    input_lb = _input.getAttr(GRB.Attr.LB)
-    input_ub = _input.getAttr(GRB.Attr.UB)
-
-    leaf_lb = node_lb[:, leaves_order]  # (n_features, n_leaves)
-    leaf_ub = node_ub[:, leaves_order]  # (n_features, n_leaves)
-    reachability = np.ones((nex, leaves_order.size), dtype=bool)
-    for f in range(n_features):
-        reachability &= (input_ub[:, f, None] >= leaf_lb[f, None, :]) & (
-            input_lb[:, f, None] <= leaf_ub[f, None, :]
-        )
+    reachability = _compute_reachability(
+        gp_model,
+        tree,
+        _input,
+        split_vars.feature_is_fixed,
+        epsilon,
+        leaves_order,
+        safety_floor,
+    )
 
     # Positions (in depth-first leaf order) of leaves some example can reach.
     active_positions = reachability.any(axis=0).nonzero()[0]

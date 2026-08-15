@@ -112,20 +112,24 @@ class TestCrossFormulationAgreement(unittest.TestCase):
             msg="MIP optimum not reproduced by predict on any representable cell",
         )
 
-    def test_diabetes_agreement(self):
+    def _diabetes_predictors(self, random_state):
         data = datasets.load_diabetes()
         X, y = data["data"], data["target"]
+        return X, [
+            GradientBoostingRegressor(
+                n_estimators=5, max_depth=3, random_state=random_state
+            ).fit(X, y),
+            RandomForestRegressor(
+                n_estimators=5, max_depth=3, random_state=random_state
+            ).fit(X, y),
+            DecisionTreeRegressor(max_depth=4, random_state=random_state).fit(X, y),
+        ]
 
+    def _diabetes_agreement(self, formulation):
+        """Compare the given shared-z formulation against the leaf baseline
+        (one test method per formulation, so failures name it)."""
         for random_state in (17, 42):
-            predictors = [
-                GradientBoostingRegressor(
-                    n_estimators=5, max_depth=3, random_state=random_state
-                ).fit(X, y),
-                RandomForestRegressor(
-                    n_estimators=5, max_depth=3, random_state=random_state
-                ).fit(X, y),
-                DecisionTreeRegressor(max_depth=4, random_state=random_state).fit(X, y),
-            ]
+            X, predictors = self._diabetes_predictors(random_state)
             for predictor in predictors:
                 for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
                     with self.subTest(
@@ -136,26 +140,25 @@ class TestCrossFormulationAgreement(unittest.TestCase):
                         obj_leaf, x_leaf, feas_tol = self._optimize(
                             predictor, X, "leaf", sense
                         )
-                        obj_misic, x_misic, _ = self._optimize(
-                            predictor, X, "misic", sense
+                        objective, x_star, _ = self._optimize(
+                            predictor, X, formulation, sense
                         )
-
-                        # The shared z couples the trees, so the misic
+                        # The shared z couples the trees, so a shared-z
                         # optimum always corresponds to a real input.
                         self._assert_predict_reproduces(
-                            predictor, obj_misic, x_misic, feas_tol
+                            predictor, objective, x_star, feas_tol
                         )
 
                         # Each solve is proven optimal within the default
                         # relative MIPGap of 1e-4.
-                        tolerance = 3e-4 * max(1.0, abs(obj_misic))
+                        tolerance = 3e-4 * max(1.0, abs(objective))
 
-                        # Every misic-feasible point is leaf-feasible, so the
-                        # leaf optimum dominates.
+                        # Every shared-z-feasible point is leaf-feasible, so
+                        # the leaf optimum dominates.
                         if sense == GRB.MAXIMIZE:
-                            self.assertGreaterEqual(obj_leaf, obj_misic - tolerance)
+                            self.assertGreaterEqual(obj_leaf, objective - tolerance)
                         else:
-                            self.assertLessEqual(obj_leaf, obj_misic + tolerance)
+                            self.assertLessEqual(obj_leaf, objective + tolerance)
 
                         # Without a duplicated-threshold tie the leaf
                         # formulation cannot mix branches across trees: the
@@ -164,9 +167,70 @@ class TestCrossFormulationAgreement(unittest.TestCase):
                         if not ties_duplicated_threshold(
                             _tree_pairs(predictor), x_leaf, feas_tol
                         ):
-                            self.assertLessEqual(abs(obj_leaf - obj_misic), tolerance)
+                            self.assertLessEqual(abs(obj_leaf - objective), tolerance)
                             self._assert_predict_reproduces(
                                 predictor, obj_leaf, x_leaf, feas_tol
+                            )
+
+    def test_diabetes_agreement_misic(self):
+        self._diabetes_agreement("misic")
+
+    def test_diabetes_agreement_parmentier_vidal(self):
+        self._diabetes_agreement("parmentier_vidal")
+
+    def test_diabetes_agreement_ocean(self):
+        """At zero margin the ocean linking is tie-uncoupled — each tree may
+        route independently at an exact threshold tie, like the leaf
+        baseline — so its optimum equals the leaf optimum (same relaxation)
+        and predict-reproduction holds only without a duplicated-threshold
+        tie. See the plan's knife-edge findings; the paper's margin (our
+        epsilon) restores tie coupling."""
+        for random_state in (17, 42):
+            X, predictors = self._diabetes_predictors(random_state)
+            for predictor in predictors:
+                for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
+                    with self.subTest(
+                        predictor=type(predictor).__name__,
+                        random_state=random_state,
+                        sense=sense,
+                    ):
+                        obj_leaf, _, feas_tol = self._optimize(
+                            predictor, X, "leaf", sense
+                        )
+                        objective, x_star, _ = self._optimize(
+                            predictor, X, "ocean", sense
+                        )
+                        tolerance = 3e-4 * max(1.0, abs(objective))
+                        self.assertLessEqual(abs(obj_leaf - objective), tolerance)
+                        if not ties_duplicated_threshold(
+                            _tree_pairs(predictor), x_star, feas_tol
+                        ):
+                            self._assert_predict_reproduces(
+                                predictor, objective, x_star, feas_tol
+                            )
+
+    def test_shared_formulations_agree(self):
+        """The shared-z formulations solve the same problem: their optima
+        must always agree (no knife-edge exception applies)."""
+        for random_state in (17, 42):
+            X, predictors = self._diabetes_predictors(random_state)
+            for predictor in predictors:
+                for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
+                    with self.subTest(
+                        predictor=type(predictor).__name__,
+                        random_state=random_state,
+                        sense=sense,
+                    ):
+                        obj_misic, _, _ = self._optimize(predictor, X, "misic", sense)
+                        tolerance = 3e-4 * max(1.0, abs(obj_misic))
+                        for formulation in ("parmentier_vidal",):
+                            objective, _, _ = self._optimize(
+                                predictor, X, formulation, sense
+                            )
+                            self.assertLessEqual(
+                                abs(obj_misic - objective),
+                                tolerance,
+                                msg=formulation,
                             )
 
 
@@ -192,72 +256,102 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
         self.threshold = float(self.predictor.tree_.threshold[0])
 
     def test_epsilon_enforced_on_right_branch(self):
+        self._check_epsilon_enforced_on_right_branch("leaf")
+
+    def test_epsilon_enforced_on_right_branch_misic(self):
+        self._check_epsilon_enforced_on_right_branch("misic")
+
+    def test_epsilon_enforced_on_right_branch_parmentier_vidal(self):
+        self._check_epsilon_enforced_on_right_branch("parmentier_vidal")
+
+    def test_epsilon_enforced_on_right_branch_ocean(self):
+        self._check_epsilon_enforced_on_right_branch("ocean")
+
+    def _check_epsilon_enforced_on_right_branch(self, formulation):
         """Selecting the right branch must push x at least epsilon above the
-        threshold, for every formulation."""
+        threshold."""
         epsilon = 1e-2
-        for formulation in ("leaf", "misic"):
-            with self.subTest(formulation=formulation):
-                params = {"OutputFlag": 0}
-                with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
-                    x = gpm.addMVar((1, 1), lb=0.0, ub=1.0)
-                    pred_constr = _add_predictor_constr_silently(
-                        gpm,
-                        self.predictor,
-                        x,
-                        epsilon=epsilon,
-                        formulation=formulation,
-                    )
-                    # Force the right leaf (value 1.0) and pull x down.
-                    gpm.addConstr(pred_constr.output.sum() >= 0.5)
-                    gpm.setObjective(x.sum(), GRB.MINIMIZE)
-                    gpm.optimize()
-                    self.assertEqual(gpm.Status, GRB.OPTIMAL)
-                    self.assertGreaterEqual(
-                        x.X[0, 0],
-                        self.threshold + epsilon - gpm.Params.FeasibilityTol,
-                    )
+        params = {"OutputFlag": 0}
+        with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+            x = gpm.addMVar((1, 1), lb=0.0, ub=1.0)
+            pred_constr = _add_predictor_constr_silently(
+                gpm,
+                self.predictor,
+                x,
+                epsilon=epsilon,
+                formulation=formulation,
+            )
+            # Force the right leaf (value 1.0) and pull x down.
+            gpm.addConstr(pred_constr.output.sum() >= 0.5)
+            gpm.setObjective(x.sum(), GRB.MINIMIZE)
+            gpm.optimize()
+            self.assertEqual(gpm.Status, GRB.OPTIMAL)
+            self.assertGreaterEqual(
+                x.X[0, 0],
+                self.threshold + epsilon - gpm.Params.FeasibilityTol,
+            )
 
     def test_fixed_feature_in_epsilon_band_is_feasible(self):
+        self._check_fixed_feature_in_epsilon_band("leaf")
+
+    def test_fixed_feature_in_epsilon_band_is_feasible_misic(self):
+        self._check_fixed_feature_in_epsilon_band("misic")
+
+    def test_fixed_feature_in_epsilon_band_is_feasible_parmentier_vidal(self):
+        self._check_fixed_feature_in_epsilon_band("parmentier_vidal")
+
+    def test_fixed_feature_in_epsilon_band_is_feasible_ocean(self):
+        self._check_fixed_feature_in_epsilon_band("ocean")
+
+    def _check_fixed_feature_in_epsilon_band(self, formulation):
         """A feature fixed to a constant inside ``(t, t + epsilon)`` must not
         make the model infeasible: epsilon is dropped for fixed features and
         the constant routes to the right branch."""
         epsilon = 1e-2
         value = self.threshold + epsilon / 2.0
-        for formulation in ("leaf", "misic"):
-            with self.subTest(formulation=formulation):
-                params = {"OutputFlag": 0}
-                with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
-                    x = gpm.addMVar((1, 1), lb=value, ub=value)
-                    pred_constr = _add_predictor_constr_silently(
-                        gpm,
-                        self.predictor,
-                        x,
-                        epsilon=epsilon,
-                        formulation=formulation,
-                    )
-                    gpm.optimize()
-                    self.assertEqual(gpm.Status, GRB.OPTIMAL)
-                    self.assertAlmostEqual(pred_constr.output.X[0, 0], 1.0)
+        params = {"OutputFlag": 0}
+        with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+            x = gpm.addMVar((1, 1), lb=value, ub=value)
+            pred_constr = _add_predictor_constr_silently(
+                gpm,
+                self.predictor,
+                x,
+                epsilon=epsilon,
+                formulation=formulation,
+            )
+            gpm.optimize()
+            self.assertEqual(gpm.Status, GRB.OPTIMAL)
+            self.assertAlmostEqual(pred_constr.output.X[0, 0], 1.0)
 
     def test_unfixed_box_inside_epsilon_band_has_no_leaf(self):
+        self._check_unfixed_box_inside_epsilon_band("leaf")
+
+    def test_unfixed_box_inside_epsilon_band_has_no_leaf_misic(self):
+        self._check_unfixed_box_inside_epsilon_band("misic")
+
+    def test_unfixed_box_inside_epsilon_band_has_no_leaf_parmentier_vidal(self):
+        self._check_unfixed_box_inside_epsilon_band("parmentier_vidal")
+
+    def test_unfixed_box_inside_epsilon_band_has_no_leaf_ocean(self):
+        self._check_unfixed_box_inside_epsilon_band("ocean")
+
+    def _check_unfixed_box_inside_epsilon_band(self, formulation):
         """A non-fixed input boxed strictly inside ``(t, t + epsilon)`` can
         reach no leaf; every formulation reports it at build time."""
         epsilon = 1e-2
         lb = self.threshold + epsilon / 4.0
         ub = self.threshold + epsilon / 2.0
-        for formulation in ("leaf", "misic"):
-            with self.subTest(formulation=formulation):
-                params = {"OutputFlag": 0}
-                with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
-                    x = gpm.addMVar((1, 1), lb=lb, ub=ub)
-                    with self.assertRaisesRegex(ValueError, "No reachable leaf nodes"):
-                        _add_predictor_constr_silently(
-                            gpm,
-                            self.predictor,
-                            x,
-                            epsilon=epsilon,
-                            formulation=formulation,
-                        )
+        params = {"OutputFlag": 0}
+        with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+            x = gpm.addMVar((1, 1), lb=lb, ub=ub)
+            with self.assertRaisesRegex(ValueError, "No reachable leaf nodes"):
+                _add_predictor_constr_silently(
+                    gpm,
+                    self.predictor,
+                    x,
+                    epsilon=epsilon,
+                    formulation=formulation,
+                )
 
     def test_positive_epsilon_warns_for_ensemble_formulation(self):
         """Ensemble formulations apply epsilon globally (every threshold of
@@ -305,28 +399,47 @@ class TestLifecycle(unittest.TestCase):
             DecisionTreeRegressor(max_depth=3, random_state=0).fit(X, y),
         ]
 
-    def test_add_remove(self):
+    def test_add_remove_misic(self):
+        self._add_remove("misic")
+
+    def test_add_remove_parmentier_vidal(self):
+        self._add_remove("parmentier_vidal")
+
+    def test_add_remove_ocean(self):
+        self._add_remove("ocean")
+
+    def test_ocean_requires_finite_bounds(self):
+        with gp.Model() as gpm:
+            gpm.Params.OutputFlag = 0
+            x = gpm.addMVar((1, self.n_features), lb=-GRB.INFINITY)
+            with self.assertRaisesRegex(ValueError, "finite bounds"):
+                add_predictor_constr(gpm, self.predictors[0], x, formulation="ocean")
+
+    def _add_remove(self, formulation):
         for predictor in self.predictors:
             with self.subTest(predictor=type(predictor).__name__):
-                with gp.Model() as gpm:
-                    gpm.Params.OutputFlag = 0
-                    x = gpm.addMVar((2, self.n_features), lb=-GRB.INFINITY)
-                    y = gpm.addMVar((2, 1), lb=-GRB.INFINITY)
-                    gpm.update()
-                    numvars = gpm.NumVars
+                self._check_add_remove(predictor, formulation)
 
-                    pred_constr = add_predictor_constr(
-                        gpm, predictor, x, y, epsilon=EPSILON, formulation="misic"
-                    )
-                    self.assertEqual(gpm.NumVars, numvars + len(pred_constr.vars))
-                    self.assertEqual(gpm.NumConstrs, len(pred_constr.constrs))
-                    self.assertEqual(gpm.NumGenConstrs, len(pred_constr.genconstrs))
+    def _check_add_remove(self, predictor, formulation):
+        with gp.Model() as gpm:
+            gpm.Params.OutputFlag = 0
+            x = gpm.addMVar((2, self.n_features), lb=-1000.0, ub=1000.0)
+            y = gpm.addMVar((2, 1), lb=-GRB.INFINITY)
+            gpm.update()
+            numvars = gpm.NumVars
 
-                    pred_constr.remove()
-                    gpm.update()
-                    self.assertEqual(gpm.NumVars, numvars)
-                    self.assertEqual(gpm.NumConstrs, 0)
-                    self.assertEqual(gpm.NumGenConstrs, 0)
+            pred_constr = add_predictor_constr(
+                gpm, predictor, x, y, epsilon=EPSILON, formulation=formulation
+            )
+            self.assertEqual(gpm.NumVars, numvars + len(pred_constr.vars))
+            self.assertEqual(gpm.NumConstrs, len(pred_constr.constrs))
+            self.assertEqual(gpm.NumGenConstrs, len(pred_constr.genconstrs))
+
+            pred_constr.remove()
+            gpm.update()
+            self.assertEqual(gpm.NumVars, numvars)
+            self.assertEqual(gpm.NumConstrs, 0)
+            self.assertEqual(gpm.NumGenConstrs, 0)
 
     def test_unknown_formulation(self):
         for predictor in self.predictors:
@@ -384,6 +497,90 @@ class TestModelSize(unittest.TestCase):
                     )
                     # Two indicator constraints link each unfixed binary.
                     self.assertEqual(gpm.NumGenConstrs, 2 * nex * n_shared)
+
+    def test_parmentier_vidal_binaries_scale_with_depth(self):
+        rng = np.random.RandomState(0)
+        X = rng.randint(0, 5, size=(200, 4)).astype(float)
+        y = rng.uniform(size=200)
+        nex = 2
+
+        for n_estimators in (2, 6):
+            predictor = GradientBoostingRegressor(
+                n_estimators=n_estimators, max_depth=3, random_state=0
+            ).fit(X, y)
+
+            trees = _sklearn_trees(predictor)
+            thresholds = thresholds_by_feature(_tree_pairs(predictor))
+            n_shared = sum(len(values) for values in thresholds.values())
+            # One branching binary per tree and depth level of its splits.
+            n_levels = sum(int(tree.max_depth) for tree in trees)
+            n_nodes = sum(int(tree.node_count) for tree in trees)
+
+            with self.subTest(n_estimators=n_estimators):
+                params = {"OutputFlag": 0}
+                with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+                    x = gpm.addMVar(
+                        (nex, X.shape[1]), lb=-GRB.INFINITY, ub=GRB.INFINITY
+                    )
+                    add_predictor_constr(
+                        gpm, predictor, x, formulation="parmentier_vidal"
+                    )
+                    gpm.update()
+
+                    # Shared split binaries plus one branching binary per
+                    # example, tree and depth level.
+                    self.assertEqual(gpm.NumBinVars, nex * (n_shared + n_levels))
+                    # Total: input + output + split binaries + branching
+                    # binaries + one continuous flow variable per example
+                    # and node.
+                    self.assertEqual(
+                        gpm.NumVars,
+                        nex * X.shape[1]
+                        + nex
+                        + nex * (n_shared + n_levels)
+                        + nex * n_nodes,
+                    )
+                    self.assertEqual(gpm.NumGenConstrs, 2 * nex * n_shared)
+
+    def test_ocean_binaries_are_only_branching_binaries(self):
+        rng = np.random.RandomState(0)
+        X = rng.randint(0, 5, size=(200, 4)).astype(float)
+        y = rng.uniform(size=200)
+        nex = 2
+
+        for n_estimators in (2, 6):
+            predictor = GradientBoostingRegressor(
+                n_estimators=n_estimators, max_depth=3, random_state=0
+            ).fit(X, y)
+
+            trees = _sklearn_trees(predictor)
+            thresholds = thresholds_by_feature(_tree_pairs(predictor))
+            n_intervals = sum(len(values) + 1 for values in thresholds.values())
+            n_levels = sum(int(tree.max_depth) for tree in trees)
+            n_nodes = sum(int(tree.node_count) for tree in trees)
+
+            with self.subTest(n_estimators=n_estimators):
+                params = {"OutputFlag": 0}
+                with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+                    x = gpm.addMVar((nex, X.shape[1]), lb=-100.0, ub=100.0)
+                    add_predictor_constr(gpm, predictor, x, formulation="ocean")
+                    gpm.update()
+
+                    # The paper's selling point: the only binaries are the
+                    # branching variables — none per threshold — and there
+                    # are no indicator constraints at all.
+                    self.assertEqual(gpm.NumBinVars, nex * n_levels)
+                    self.assertEqual(gpm.NumGenConstrs, 0)
+                    # Total: input + output + branching binaries + one flow
+                    # per example and node + one mu per example and interval.
+                    self.assertEqual(
+                        gpm.NumVars,
+                        nex * X.shape[1]
+                        + nex
+                        + nex * n_levels
+                        + nex * n_nodes
+                        + nex * n_intervals,
+                    )
 
 
 if __name__ == "__main__":
