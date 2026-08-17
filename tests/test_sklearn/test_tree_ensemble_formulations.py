@@ -179,12 +179,11 @@ class TestCrossFormulationAgreement(unittest.TestCase):
         self._diabetes_agreement("parmentier_vidal")
 
     def test_diabetes_agreement_ocean(self):
-        """At zero margin the ocean linking is tie-uncoupled — each tree may
-        route independently at an exact threshold tie, like the leaf
-        baseline — so its optimum equals the leaf optimum (same relaxation)
-        and predict-reproduction holds only without a duplicated-threshold
-        tie. See the plan's knife-edge findings; the paper's margin (our
-        epsilon) restores tie coupling."""
+        """Ocean sits between the families: the shared mu chain forbids
+        per-tree tolerance-slop stacking (so ocean <= leaf when maximizing)
+        but still allows branch mixing at exact ties (so misic <= ocean).
+        Predict-reproduction holds only without a duplicated-threshold tie.
+        The paper's margin (our epsilon) restores tie coupling."""
         for random_state in (17, 42):
             X, predictors = self._diabetes_predictors(random_state)
             for predictor in predictors:
@@ -202,6 +201,42 @@ class TestCrossFormulationAgreement(unittest.TestCase):
                         )
                         tolerance = 3e-4 * max(1.0, abs(objective))
                         self.assertLessEqual(abs(obj_leaf - objective), tolerance)
+                        if not ties_duplicated_threshold(
+                            _tree_pairs(predictor), x_star, feas_tol
+                        ):
+                            self._assert_predict_reproduces(
+                                predictor, objective, x_star, feas_tol
+                            )
+
+    def test_diabetes_agreement_biggs_perakis(self):
+        """Exact-arithmetic: biggs_perakis equals leaf (same per-tree closure
+        boxes); under solver tolerances only the sandwich
+        misic <= biggs_perakis <= leaf (maximize) is sound, since
+        per-tree-row encodings may stack independent sub-tolerance
+        violations differently."""
+        for random_state in (17, 42):
+            X, predictors = self._diabetes_predictors(random_state)
+            for predictor in predictors:
+                for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
+                    with self.subTest(
+                        predictor=type(predictor).__name__,
+                        random_state=random_state,
+                        sense=sense,
+                    ):
+                        obj_leaf, _, feas_tol = self._optimize(
+                            predictor, X, "leaf", sense
+                        )
+                        obj_misic, _, _ = self._optimize(predictor, X, "misic", sense)
+                        objective, x_star, _ = self._optimize(
+                            predictor, X, "biggs_perakis", sense
+                        )
+                        tolerance = 3e-4 * max(1.0, abs(objective))
+                        if sense == GRB.MAXIMIZE:
+                            self.assertGreaterEqual(objective, obj_misic - tolerance)
+                            self.assertLessEqual(objective, obj_leaf + tolerance)
+                        else:
+                            self.assertLessEqual(objective, obj_misic + tolerance)
+                            self.assertGreaterEqual(objective, obj_leaf - tolerance)
                         if not ties_duplicated_threshold(
                             _tree_pairs(predictor), x_star, feas_tol
                         ):
@@ -267,6 +302,9 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
     def test_epsilon_enforced_on_right_branch_ocean(self):
         self._check_epsilon_enforced_on_right_branch("ocean")
 
+    def test_epsilon_enforced_on_right_branch_biggs_perakis(self):
+        self._check_epsilon_enforced_on_right_branch("biggs_perakis")
+
     def _check_epsilon_enforced_on_right_branch(self, formulation):
         """Selecting the right branch must push x at least epsilon above the
         threshold."""
@@ -303,6 +341,9 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
     def test_fixed_feature_in_epsilon_band_is_feasible_ocean(self):
         self._check_fixed_feature_in_epsilon_band("ocean")
 
+    def test_fixed_feature_in_epsilon_band_is_feasible_biggs_perakis(self):
+        self._check_fixed_feature_in_epsilon_band("biggs_perakis")
+
     def _check_fixed_feature_in_epsilon_band(self, formulation):
         """A feature fixed to a constant inside ``(t, t + epsilon)`` must not
         make the model infeasible: epsilon is dropped for fixed features and
@@ -335,6 +376,9 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
     def test_unfixed_box_inside_epsilon_band_has_no_leaf_ocean(self):
         self._check_unfixed_box_inside_epsilon_band("ocean")
 
+    def test_unfixed_box_inside_epsilon_band_has_no_leaf_biggs_perakis(self):
+        self._check_unfixed_box_inside_epsilon_band("biggs_perakis")
+
     def _check_unfixed_box_inside_epsilon_band(self, formulation):
         """A non-fixed input boxed strictly inside ``(t, t + epsilon)`` can
         reach no leaf; every formulation reports it at build time."""
@@ -364,7 +408,13 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
                 add_predictor_constr(
                     gpm, self.predictor, x, epsilon=1e-2, formulation="misic"
                 )
-        for formulation, epsilon in (("misic", 0.0), ("leaf", 1e-2)):
+        for formulation, epsilon in (
+            ("misic", 0.0),
+            ("leaf", 1e-2),
+            # biggs_perakis carries epsilon path-wise in its leaf boxes, so
+            # the global-epsilon warning must not fire for it.
+            ("biggs_perakis", 1e-2),
+        ):
             with self.subTest(formulation=formulation, epsilon=epsilon):
                 with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
                     x = gpm.addMVar((1, 1), lb=0.0, ub=1.0)
@@ -408,12 +458,24 @@ class TestLifecycle(unittest.TestCase):
     def test_add_remove_ocean(self):
         self._add_remove("ocean")
 
+    def test_add_remove_biggs_perakis(self):
+        self._add_remove("biggs_perakis")
+
     def test_ocean_requires_finite_bounds(self):
         with gp.Model() as gpm:
             gpm.Params.OutputFlag = 0
             x = gpm.addMVar((1, self.n_features), lb=-GRB.INFINITY)
             with self.assertRaisesRegex(ValueError, "finite bounds"):
                 add_predictor_constr(gpm, self.predictors[0], x, formulation="ocean")
+
+    def test_biggs_perakis_requires_finite_bounds(self):
+        with gp.Model() as gpm:
+            gpm.Params.OutputFlag = 0
+            x = gpm.addMVar((1, self.n_features), lb=-GRB.INFINITY)
+            with self.assertRaisesRegex(ValueError, "finite bounds"):
+                add_predictor_constr(
+                    gpm, self.predictors[0], x, formulation="biggs_perakis"
+                )
 
     def _add_remove(self, formulation):
         for predictor in self.predictors:
@@ -580,6 +642,37 @@ class TestModelSize(unittest.TestCase):
                         + nex * n_levels
                         + nex * n_nodes
                         + nex * n_intervals,
+                    )
+
+    def test_biggs_perakis_binaries_are_leaf_selectors(self):
+        rng = np.random.RandomState(0)
+        X = rng.randint(0, 5, size=(200, 4)).astype(float)
+        y = rng.uniform(size=200)
+        nex = 2
+
+        for n_estimators in (2, 6):
+            predictor = GradientBoostingRegressor(
+                n_estimators=n_estimators, max_depth=3, random_state=0
+            ).fit(X, y)
+
+            trees = _sklearn_trees(predictor)
+            n_leaves = sum(int((tree.children_left < 0).sum()) for tree in trees)
+
+            with self.subTest(n_estimators=n_estimators):
+                params = {"OutputFlag": 0}
+                with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+                    x = gpm.addMVar((nex, X.shape[1]), lb=-100.0, ub=100.0)
+                    add_predictor_constr(gpm, predictor, x, formulation="biggs_perakis")
+                    gpm.update()
+
+                    # One binary leaf selector per example and leaf — like
+                    # the naive leaf count — no indicator constraints and no
+                    # shared variables of any kind.
+                    self.assertEqual(gpm.NumBinVars, nex * n_leaves)
+                    self.assertEqual(gpm.NumGenConstrs, 0)
+                    self.assertEqual(
+                        gpm.NumVars,
+                        nex * X.shape[1] + nex + nex * n_leaves,
                     )
 
 

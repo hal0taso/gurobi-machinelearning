@@ -23,6 +23,9 @@ class TestSafetyFloor(unittest.TestCase):
     def test_safety_floor_ocean(self):
         self._check_safety_floor("ocean")
 
+    def test_safety_floor_biggs_perakis(self):
+        self._check_safety_floor("biggs_perakis")
+
     def _check_safety_floor(self, formulation):
         # Create a simple decision tree with a threshold close to zero
         X = np.array([[0.0], [1.0]])
@@ -98,6 +101,9 @@ class TestSafetyFloor(unittest.TestCase):
     def test_warning_no_safety_floor_ocean(self):
         self._check_warning_no_safety_floor("ocean")
 
+    def test_warning_no_safety_floor_biggs_perakis(self):
+        self._check_warning_no_safety_floor("biggs_perakis")
+
     def _check_warning_no_safety_floor(self, formulation):
         # Create a simple decision tree with a threshold close to zero
         X = np.array([[0.0], [1.0]])
@@ -129,6 +135,9 @@ class TestSafetyFloor(unittest.TestCase):
 
     def test_warning_custom_tolerance_ocean(self):
         self._check_warning_custom_tolerance("ocean")
+
+    def test_warning_custom_tolerance_biggs_perakis(self):
+        self._check_warning_custom_tolerance("biggs_perakis")
 
     def _check_warning_custom_tolerance(self, formulation):
         # Create a simple decision tree with a threshold
@@ -172,6 +181,9 @@ class TestSafetyFloor(unittest.TestCase):
 
     def test_safety_floor_negative_ocean(self):
         self._check_safety_floor_negative("ocean")
+
+    def test_safety_floor_negative_biggs_perakis(self):
+        self._check_safety_floor_negative("biggs_perakis")
 
     def _check_safety_floor_negative(self, formulation):
         # Create a simple decision tree with a threshold close to zero

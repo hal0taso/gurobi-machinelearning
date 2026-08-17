@@ -92,6 +92,9 @@ class TestXGBoosthModel(FixedRegressionModel):
     def test_diabetes_xgboost_ocean(self):
         self._diabetes_xgboost_ensemble("ocean")
 
+    def test_diabetes_xgboost_biggs_perakis(self):
+        self._diabetes_xgboost_ensemble("biggs_perakis")
+
     @staticmethod
     def prepare_binary_iris():
         data = datasets.load_iris()
@@ -135,6 +138,9 @@ class TestXGBoosthModel(FixedRegressionModel):
 
     def test_iris_xgboost_ocean(self):
         self._iris_ensemble("ocean")
+
+    def test_iris_xgboost_biggs_perakis(self):
+        self._iris_ensemble("biggs_perakis")
 
     def test_iris_xgboost_pipeline(self):
         if gp.gurobi.version()[0] < 11:

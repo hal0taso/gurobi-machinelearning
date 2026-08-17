@@ -135,17 +135,51 @@ class TestCrossFormulationAgreement(unittest.TestCase):
         self._diabetes_agreement("parmentier_vidal")
 
     def test_diabetes_agreement_ocean(self):
-        """At zero margin the ocean linking is tie-uncoupled (like the leaf
-        baseline): equal optima, reproduction only without a duplicated
-        tie. See tests/test_sklearn/test_tree_ensemble_formulations.py."""
+        """Ocean sits between the families: misic <= ocean <= leaf
+        (maximize). See tests/test_sklearn/test_tree_ensemble_formulations.py."""
         for random_state in (17, 42):
             X, predictor = self._diabetes_predictor(random_state)
             for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
                 with self.subTest(random_state=random_state, sense=sense):
                     obj_leaf, _, feas_tol = self._optimize(predictor, X, "leaf", sense)
+                    obj_misic, _, _ = self._optimize(predictor, X, "misic", sense)
                     objective, x_star, _ = self._optimize(predictor, X, "ocean", sense)
                     tolerance = 3e-4 * max(1.0, abs(objective))
-                    self.assertLessEqual(abs(obj_leaf - objective), tolerance)
+                    # Exact-arithmetic ordering: misic <= ocean <= leaf
+                    # (maximize; reversed when minimizing) — see the sklearn
+                    # test module for why equality with leaf is unsound.
+                    if sense == GRB.MAXIMIZE:
+                        self.assertGreaterEqual(objective, obj_misic - tolerance)
+                        self.assertLessEqual(objective, obj_leaf + tolerance)
+                    else:
+                        self.assertLessEqual(objective, obj_misic + tolerance)
+                        self.assertGreaterEqual(objective, obj_leaf - tolerance)
+                    if not ties_duplicated_threshold(
+                        _tree_pairs(predictor), x_star, feas_tol
+                    ):
+                        self._assert_predict_reproduces(
+                            predictor, objective, x_star, feas_tol
+                        )
+
+    def test_diabetes_agreement_biggs_perakis(self):
+        """Sandwich misic <= biggs_perakis <= leaf (maximize) — see the
+        sklearn test module."""
+        for random_state in (17, 42):
+            X, predictor = self._diabetes_predictor(random_state)
+            for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
+                with self.subTest(random_state=random_state, sense=sense):
+                    obj_leaf, _, feas_tol = self._optimize(predictor, X, "leaf", sense)
+                    obj_misic, _, _ = self._optimize(predictor, X, "misic", sense)
+                    objective, x_star, _ = self._optimize(
+                        predictor, X, "biggs_perakis", sense
+                    )
+                    tolerance = 3e-4 * max(1.0, abs(objective))
+                    if sense == GRB.MAXIMIZE:
+                        self.assertGreaterEqual(objective, obj_misic - tolerance)
+                        self.assertLessEqual(objective, obj_leaf + tolerance)
+                    else:
+                        self.assertLessEqual(objective, obj_misic + tolerance)
+                        self.assertGreaterEqual(objective, obj_leaf - tolerance)
                     if not ties_duplicated_threshold(
                         _tree_pairs(predictor), x_star, feas_tol
                     ):
@@ -191,6 +225,9 @@ class TestLifecycle(unittest.TestCase):
 
     def test_add_remove_ocean(self):
         self._check_add_remove("ocean")
+
+    def test_add_remove_biggs_perakis(self):
+        self._check_add_remove("biggs_perakis")
 
     def _check_add_remove(self, formulation):
         with gp.Model() as gpm:
@@ -380,6 +417,37 @@ class TestModelSize(unittest.TestCase):
                         + nex * n_levels
                         + nex * n_nodes
                         + nex * n_intervals,
+                    )
+
+    def test_biggs_perakis_binaries_are_leaf_selectors(self):
+        rng = np.random.RandomState(0)
+        X = rng.randint(0, 5, size=(200, 4)).astype(float)
+        y = rng.uniform(size=200)
+        nex = 2
+
+        for n_estimators in (2, 6):
+            predictor = xgb.XGBRegressor(
+                n_estimators=n_estimators, max_depth=3, random_state=0
+            ).fit(X, y)
+
+            raw = json.loads(predictor.get_booster().save_raw(raw_format="json"))
+            n_leaves = sum(
+                int((np.array(tree["left_children"]) < 0).sum())
+                for tree in raw["learner"]["gradient_booster"]["model"]["trees"]
+            )
+
+            with self.subTest(n_estimators=n_estimators):
+                params = {"OutputFlag": 0}
+                with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+                    x = gpm.addMVar((nex, X.shape[1]), lb=-100.0, ub=100.0)
+                    add_predictor_constr(gpm, predictor, x, formulation="biggs_perakis")
+                    gpm.update()
+
+                    self.assertEqual(gpm.NumBinVars, nex * n_leaves)
+                    self.assertEqual(gpm.NumGenConstrs, 0)
+                    self.assertEqual(
+                        gpm.NumVars,
+                        nex * X.shape[1] + nex + nex + nex * n_leaves,
                     )
 
 

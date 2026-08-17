@@ -49,6 +49,9 @@ class TestIssue496(unittest.TestCase):
     def test_numerical_issue_ocean(self):
         self._check_numerical_issue_warning("ocean")
 
+    def test_numerical_issue_biggs_perakis(self):
+        self._check_numerical_issue_warning("biggs_perakis")
+
     def _check_numerical_issue_warning(self, formulation):
         """Verify that a warning is raised when thresholds fall below FeasibilityTol."""
         with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:
@@ -70,6 +73,9 @@ class TestIssue496(unittest.TestCase):
 
     def test_ocean_formulation_fix(self):
         self._check_safety_floor_fix("ocean")
+
+    def test_biggs_perakis_formulation_fix(self):
+        self._check_safety_floor_fix("biggs_perakis")
 
     def _check_safety_floor_fix(self, formulation):
         with gp.Env(params={"OutputFlag": 0}) as env, gp.Model(env=env) as m:

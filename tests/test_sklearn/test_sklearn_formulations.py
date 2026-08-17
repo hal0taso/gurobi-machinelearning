@@ -148,6 +148,10 @@ class TestSklearnModel(FixedRegressionModel):
         # and the ocean formulation requires finite bounds on split features.
         self._diabetes_sklearn_ensemble("ocean", include_pipelines=False)
 
+    def test_diabetes_sklearn_biggs_perakis(self):
+        # Pipelines excluded for the same finite-bounds reason as ocean.
+        self._diabetes_sklearn_ensemble("biggs_perakis", include_pipelines=False)
+
     def test_iris_proba(self):
         data = datasets.load_iris()
 
@@ -278,6 +282,9 @@ class TestSklearnModel(FixedRegressionModel):
     def test_circle_ocean(self):
         # See test_diabetes_sklearn_ocean for the pipeline exclusion.
         self._circle_ensemble("ocean", include_pipelines=False)
+
+    def test_circle_biggs_perakis(self):
+        self._circle_ensemble("biggs_perakis", include_pipelines=False)
 
 
 class TestMNIST(unittest.TestCase):

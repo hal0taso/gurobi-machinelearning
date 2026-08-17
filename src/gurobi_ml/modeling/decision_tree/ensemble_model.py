@@ -29,6 +29,7 @@ from warnings import warn
 
 import numpy as np
 
+from .biggs_perakis import add_biggs_perakis_tree
 from .misic import add_misic_tree
 from .ocean import OrdinalMuVariables, add_ocean_tree
 from .parmentier_vidal import add_parmentier_vidal_tree
@@ -38,6 +39,7 @@ _TREE_BUILDERS = {
     "misic": add_misic_tree,
     "parmentier_vidal": add_parmentier_vidal_tree,
     "ocean": add_ocean_tree,
+    "biggs_perakis": add_biggs_perakis_tree,
 }
 
 #: Formulations handled by :py:func:`add_tree_ensemble_formulation`.
@@ -90,7 +92,11 @@ def add_tree_ensemble_formulation(
     except KeyError:
         raise ValueError(f"Unknown formulation: {formulation}") from None
 
-    if epsilon > 0.0:
+    # The projected Biggs-Perakis formulation shares no ensemble-level
+    # variables: its epsilon lives in the per-tree leaf boxes and acts
+    # path-wise like the leaf baseline, so the global-epsilon warning does
+    # not apply.
+    if epsilon > 0.0 and formulation != "biggs_perakis":
         warn(
             f"epsilon={epsilon} with the '{formulation}' formulation applies "
             "globally: the band (t, t + epsilon) of every threshold of the "
@@ -104,11 +110,17 @@ def add_tree_ensemble_formulation(
         )
 
     # The "ocean" variant shares continuous ordinal interval variables
-    # instead of binary split variables.
-    shared_variables = OrdinalMuVariables if formulation == "ocean" else SplitVariables
-    split_vars = shared_variables(
-        gp_model, trees, _input, epsilon, _name_var, safety_floor
-    )
+    # instead of binary split variables; "biggs_perakis" shares nothing —
+    # its trees couple through the input variables only.
+    if formulation == "biggs_perakis":
+        split_vars = None
+    else:
+        shared_variables = (
+            OrdinalMuVariables if formulation == "ocean" else SplitVariables
+        )
+        split_vars = shared_variables(
+            gp_model, trees, _input, epsilon, _name_var, safety_floor
+        )
 
     outdim = output.shape[1]
     output_lb = np.full(outdim, float(constant))

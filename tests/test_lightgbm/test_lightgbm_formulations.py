@@ -78,3 +78,6 @@ class TestLGBMhModel(FixedRegressionModel):
 
     def test_diabetes_lightgbm_ocean(self):
         self._diabetes_lightgbm_ensemble("ocean")
+
+    def test_diabetes_lightgbm_biggs_perakis(self):
+        self._diabetes_lightgbm_ensemble("biggs_perakis")
