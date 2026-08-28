@@ -50,13 +50,13 @@ def add_tree_ensemble_formulation(
     gp_model,
     trees,
     weights,
-    constant,
     _input,
     output,
     formulation,
     epsilon,
     _name_var,
     safety_floor=0.0,
+    constant=0.0,
 ):
     """Formulate a tree ensemble in gp_model using formulation.
 
@@ -72,8 +72,6 @@ def add_tree_ensemble_formulation(
         :py:class:`gurobi_ml.modeling.decision_tree.AbstractTreeEstimator`).
     weights : ndarray
         Weight of each tree in the ensemble prediction.
-    constant : float
-        Constant offset of the ensemble prediction.
     _input : mvar_array_like
         Decision variables used as input for the ensemble.
     output : mvar_array_like
@@ -86,6 +84,9 @@ def add_tree_ensemble_formulation(
         Function to name variables.
     safety_floor : float, optional
         |SafetyFloorParam|
+    constant : float, optional
+        Constant offset of the ensemble prediction (e.g. the initial
+        prediction of a gradient boosting model). Defaults to 0.
     """
     try:
         tree_builder = _TREE_BUILDERS[formulation]

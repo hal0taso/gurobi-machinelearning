@@ -43,13 +43,13 @@ def _add_sklearn_tree_ensemble_formulation(
     gp_model,
     estimators,
     weights,
-    constant,
     input_vars,
     output_vars,
     formulation,
     epsilon,
     name_var,
     safety_floor=0.0,
+    constant=0.0,
 ):
     """Formulate a list of fitted sklearn decision trees as one ensemble.
 
@@ -61,13 +61,13 @@ def _add_sklearn_tree_ensemble_formulation(
         gp_model,
         trees,
         weights,
-        constant,
         input_vars,
         output_vars,
         formulation,
         epsilon,
         name_var,
         safety_floor=safety_floor,
+        constant=constant,
     )
 
 

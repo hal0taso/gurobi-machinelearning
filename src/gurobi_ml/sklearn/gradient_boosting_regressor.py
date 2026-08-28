@@ -139,13 +139,13 @@ class GradientBoostingRegressorConstr(SKgetter, AbstractPredictorConstr):
                 model,
                 [predictor.estimators_[i][0] for i in range(predictor.n_estimators_)],
                 np.full(predictor.n_estimators_, predictor.learning_rate),
-                predictor.init_.constant_[0][0],
                 _input,
                 output,
                 formulation,
                 kwargs.get("epsilon", 0.0),
                 self._name_var,
                 safety_floor=self.safety_floor,
+                constant=predictor.init_.constant_[0][0],
             )
             return
 

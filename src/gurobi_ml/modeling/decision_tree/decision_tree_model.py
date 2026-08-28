@@ -405,7 +405,6 @@ class AbstractTreeEstimator(AbstractPredictorConstr):
                 self.gp_model,
                 [self._tree],
                 np.ones(1),
-                0.0,
                 self.input,
                 self.output,
                 self._formulation,

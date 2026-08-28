@@ -344,7 +344,6 @@ class LGBMConstr(AbstractPredictorConstr):
                 model,
                 trees,
                 np.ones(n_estimators),
-                0.0,
                 _input,
                 output,
                 formulation,

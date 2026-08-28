@@ -130,7 +130,6 @@ class RandomForestRegressorConstr(SKgetter, AbstractPredictorConstr):
                 model,
                 predictor.estimators_,
                 np.full(predictor.n_estimators, 1.0 / predictor.n_estimators),
-                0.0,
                 _input,
                 output,
                 formulation,

@@ -284,7 +284,6 @@ class XGBoostRegressorConstr(AbstractPredictorConstr):
                 model,
                 [self._xgb_tree_to_dict(tree, self.epsilon) for tree in trees],
                 np.ones(n_estimators),
-                0.0,
                 _input,
                 trees_sum,
                 formulation,
