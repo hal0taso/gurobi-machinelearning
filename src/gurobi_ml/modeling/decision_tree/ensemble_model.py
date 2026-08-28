@@ -86,6 +86,16 @@ def add_tree_ensemble_formulation(
         Function to name variables.
     safety_floor : float, optional
         |SafetyFloorParam|
+
+    Returns
+    -------
+    list of (mvar_array_like, ndarray)
+        Per tree, the leaf variables and the tree node index of each of
+        their columns: column ``j`` of the variables corresponds to leaf
+        node ``nodes[j]`` (as in sklearn's ``apply``). The variable is 1
+        (or carries the flow) exactly when the input reaches that leaf —
+        usable to reconstruct decisions or to constrain leaf co-selection
+        across examples.
     """
     try:
         tree_builder = _TREE_BUILDERS[formulation]
@@ -126,8 +136,9 @@ def add_tree_ensemble_formulation(
     output_lb = np.full(outdim, float(constant))
     output_ub = np.full(outdim, float(constant))
     total = constant
+    tree_leafs = []
     for i, (tree, weight) in enumerate(zip(trees, weights)):
-        expression, values = tree_builder(
+        expression, values, leaf_vars, leaf_nodes = tree_builder(
             gp_model,
             split_vars,
             tree,
@@ -136,6 +147,7 @@ def add_tree_ensemble_formulation(
             name=_name_var(f"y[{i}]"),
             safety_floor=safety_floor,
         )
+        tree_leafs.append((leaf_vars, leaf_nodes))
         total = total + weight * expression
         output_lb += np.minimum(
             weight * values.min(axis=0), weight * values.max(axis=0)
@@ -147,3 +159,4 @@ def add_tree_ensemble_formulation(
     gp_model.addConstr(output == total)
     gp_model.addConstr(output >= output_lb)
     gp_model.addConstr(output <= output_ub)
+    return tree_leafs

@@ -120,4 +120,4 @@ def add_biggs_perakis_tree(
         gp_model.addConstr((z * box_ub).sum(axis=1) >= _input[:, f])
 
     values = tree["value"][active_leaves, :]
-    return z @ values, values
+    return z @ values, values, z, active_leaves

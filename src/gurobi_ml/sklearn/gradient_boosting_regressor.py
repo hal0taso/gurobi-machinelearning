@@ -135,7 +135,7 @@ class GradientBoostingRegressorConstr(SKgetter, AbstractPredictorConstr):
 
         formulation = kwargs.get("formulation", "leaf")
         if formulation in ENSEMBLE_FORMULATIONS:
-            _add_sklearn_tree_ensemble_formulation(
+            self._tree_leafs = _add_sklearn_tree_ensemble_formulation(
                 model,
                 [predictor.estimators_[i][0] for i in range(predictor.n_estimators_)],
                 np.full(predictor.n_estimators_, predictor.learning_rate),

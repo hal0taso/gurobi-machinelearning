@@ -280,7 +280,7 @@ class XGBoostRegressorConstr(AbstractPredictorConstr):
             trees_sum = model.addMVar(
                 (nex, 1), lb=-GRB.INFINITY, name=self._name_var("trees_sum")
             )
-            add_tree_ensemble_formulation(
+            self._tree_leafs = add_tree_ensemble_formulation(
                 model,
                 [self._xgb_tree_to_dict(tree, self.epsilon) for tree in trees],
                 np.ones(n_estimators),

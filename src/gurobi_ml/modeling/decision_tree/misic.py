@@ -140,5 +140,6 @@ def add_misic_tree(
             else:
                 gp_model.addConstr(side <= 1 - z_col)
 
-    values = tree["value"][leaves_order[active_positions], :]
-    return y @ values, values
+    active_leaves = leaves_order[active_positions]
+    values = tree["value"][active_leaves, :]
+    return y @ values, values, y, active_leaves

@@ -340,7 +340,7 @@ class LGBMConstr(AbstractPredictorConstr):
                 flat_tree = self._flat_tree_representation(tree["tree_structure"])
                 flat_tree["n_features"] = lgbm_raw["max_feature_idx"] + 1
                 trees.append(flat_tree)
-            add_tree_ensemble_formulation(
+            self._tree_leafs = add_tree_ensemble_formulation(
                 model,
                 trees,
                 np.ones(n_estimators),

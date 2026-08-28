@@ -155,4 +155,5 @@ def add_parmentier_vidal_tree(
     active_leaves = [node for node in active_nodes if children_left[node] < 0]
     leaf_columns = [column[node] for node in active_leaves]
     values = tree["value"][active_leaves, :]
-    return flow[:, leaf_columns] @ values, values
+    leaf_flow = flow[:, leaf_columns]
+    return leaf_flow @ values, values, leaf_flow, np.array(active_leaves)

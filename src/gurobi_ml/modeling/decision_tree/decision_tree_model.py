@@ -151,7 +151,8 @@ def _leafs_formulation(
     # Drop leaves that no example can reach — they contribute nothing.
     any_reachable = reachability_matrix.any(axis=0)  # (n_leaves,)
     active_leaf_nodes = leaf_nodes[any_reachable]
-    active_reachability = reachability_matrix[:, any_reachable]  # (nex, n_active)
+    # (nex, n_active)
+    active_reachability = reachability_matrix[:, any_reachable]
     n_active = len(active_leaf_nodes)
 
     if n_active == 0:
@@ -401,7 +402,7 @@ class AbstractTreeEstimator(AbstractPredictorConstr):
             )
         elif self._formulation in ENSEMBLE_FORMULATIONS:
             # A lone decision tree is an ensemble of one tree.
-            add_tree_ensemble_formulation(
+            self._tree_leafs = add_tree_ensemble_formulation(
                 self.gp_model,
                 [self._tree],
                 np.ones(1),
