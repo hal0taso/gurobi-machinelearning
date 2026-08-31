@@ -50,11 +50,12 @@ def _add_sklearn_tree_ensemble_formulation(
     name_var,
     safety_floor=0.0,
     constant=0.0,
+    output_coef=1.0,
 ):
     """Formulate a list of fitted sklearn decision trees as one ensemble.
 
     Shared by the gradient boosting and random forest classes; they differ
-    only in weights and constant.
+    only in how the tree predictions are combined.
     """
     trees = [_sklearn_tree_to_dict(estimator.tree_) for estimator in estimators]
     add_tree_ensemble_formulation(
@@ -68,6 +69,7 @@ def _add_sklearn_tree_ensemble_formulation(
         name_var,
         safety_floor=safety_floor,
         constant=constant,
+        output_coef=output_coef,
     )
 
 

@@ -129,13 +129,14 @@ class RandomForestRegressorConstr(SKgetter, AbstractPredictorConstr):
             _add_sklearn_tree_ensemble_formulation(
                 model,
                 predictor.estimators_,
-                np.full(predictor.n_estimators, 1.0 / predictor.n_estimators),
+                np.ones(predictor.n_estimators),
                 _input,
                 output,
                 formulation,
                 kwargs.get("epsilon", 0.0),
                 self._name_var,
                 safety_floor=self.safety_floor,
+                output_coef=predictor.n_estimators,
             )
             return
 

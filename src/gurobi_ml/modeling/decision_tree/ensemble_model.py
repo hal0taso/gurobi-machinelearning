@@ -57,11 +57,12 @@ def add_tree_ensemble_formulation(
     _name_var,
     safety_floor=0.0,
     constant=0.0,
+    output_coef=1.0,
 ):
     """Formulate a tree ensemble in gp_model using formulation.
 
     The formulation predicts
-    ``output == sum_t weights[t] * tree_t(input) + constant``.
+    ``output_coef * output == sum_t weights[t] * tree_t(input) + constant``.
 
     Parameters
     ----------
@@ -87,6 +88,11 @@ def add_tree_ensemble_formulation(
     constant : float, optional
         Constant offset of the ensemble prediction (e.g. the initial
         prediction of a gradient boosting model). Defaults to 0.
+    output_coef : float, optional
+        Coefficient of ``output`` in the linking constraint. Averaging
+        ensembles pass the number of trees here, so that the leaf values
+        enter the model unscaled and the only scaling coefficient is an
+        exact integer on ``output``. Defaults to 1.
     """
     try:
         tree_builder = _TREE_BUILDERS[formulation]
@@ -145,6 +151,6 @@ def add_tree_ensemble_formulation(
             weight * values.min(axis=0), weight * values.max(axis=0)
         )
 
-    gp_model.addConstr(output == total)
-    gp_model.addConstr(output >= output_lb)
-    gp_model.addConstr(output <= output_ub)
+    gp_model.addConstr(output_coef * output == total)
+    gp_model.addConstr(output_coef * output >= output_lb)
+    gp_model.addConstr(output_coef * output <= output_ub)
