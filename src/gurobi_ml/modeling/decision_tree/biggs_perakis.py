@@ -42,7 +42,11 @@ otherwise (same requirement and rationale as the "ocean" formulation).
 import numpy as np
 from gurobipy import GRB
 
-from .decision_tree_model import _compute_leafs_bounds, _compute_reachability
+from .decision_tree_model import (
+    TreeLeaves,
+    _compute_leafs_bounds,
+    _compute_reachability,
+)
 from .misic import _leaf_intervals
 
 
@@ -120,4 +124,4 @@ def add_biggs_perakis_tree(
         gp_model.addConstr((z * box_ub).sum(axis=1) >= _input[:, f])
 
     values = tree["value"][active_leaves, :]
-    return z @ values, values
+    return z @ values, values, TreeLeaves(z, active_leaves)

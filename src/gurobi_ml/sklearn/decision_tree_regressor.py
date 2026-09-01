@@ -55,10 +55,11 @@ def _add_sklearn_tree_ensemble_formulation(
     """Formulate a list of fitted sklearn decision trees as one ensemble.
 
     Shared by the gradient boosting and random forest classes; they differ
-    only in how the tree predictions are combined.
+    only in how the tree predictions are combined. Returns the per-tree
+    leaf variables of :py:func:`add_tree_ensemble_formulation`.
     """
     trees = [_sklearn_tree_to_dict(estimator.tree_) for estimator in estimators]
-    add_tree_ensemble_formulation(
+    return add_tree_ensemble_formulation(
         gp_model,
         trees,
         weights,

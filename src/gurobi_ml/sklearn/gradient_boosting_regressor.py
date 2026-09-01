@@ -23,7 +23,7 @@ from gurobipy import GRB
 
 from ..exceptions import ModelConfigurationError
 from ..modeling import AbstractPredictorConstr
-from ..modeling.decision_tree import ENSEMBLE_FORMULATIONS
+from ..modeling.decision_tree import ENSEMBLE_FORMULATIONS, TreeLeavesAccessor
 from .decision_tree_regressor import (
     _add_sklearn_tree_ensemble_formulation,
     add_decision_tree_regressor_constr,
@@ -87,7 +87,9 @@ def add_gradient_boosting_regressor_constr(
     )
 
 
-class GradientBoostingRegressorConstr(SKgetter, AbstractPredictorConstr):
+class GradientBoostingRegressorConstr(
+    SKgetter, TreeLeavesAccessor, AbstractPredictorConstr
+):
     """Class to formulate a trained
     :external+sklearn:py:class:`sklearn.ensemble.GradientBoostingRegressor`
     in a gurobipy model.
@@ -135,7 +137,7 @@ class GradientBoostingRegressorConstr(SKgetter, AbstractPredictorConstr):
 
         formulation = kwargs.get("formulation", "leaf")
         if formulation in ENSEMBLE_FORMULATIONS:
-            _add_sklearn_tree_ensemble_formulation(
+            self._tree_leaves = _add_sklearn_tree_ensemble_formulation(
                 model,
                 [predictor.estimators_[i][0] for i in range(predictor.n_estimators_)],
                 np.full(predictor.n_estimators_, predictor.learning_rate),
@@ -174,6 +176,10 @@ class GradientBoostingRegressorConstr(SKgetter, AbstractPredictorConstr):
                 )
             )
         self.estimators_ = estimators
+        if all(est._tree_leaves is not None for est in estimators):
+            self._tree_leaves = tuple(
+                leaves for est in estimators for leaves in est._tree_leaves
+            )
 
         constant = predictor.init_.constant_
         model.addConstr(

@@ -22,7 +22,7 @@ import numpy as np
 from gurobipy import GRB
 
 from ..modeling import AbstractPredictorConstr
-from ..modeling.decision_tree import ENSEMBLE_FORMULATIONS
+from ..modeling.decision_tree import ENSEMBLE_FORMULATIONS, TreeLeavesAccessor
 from .decision_tree_regressor import (
     _add_sklearn_tree_ensemble_formulation,
     add_decision_tree_regressor_constr,
@@ -86,7 +86,9 @@ def add_random_forest_regressor_constr(
     )
 
 
-class RandomForestRegressorConstr(SKgetter, AbstractPredictorConstr):
+class RandomForestRegressorConstr(
+    SKgetter, TreeLeavesAccessor, AbstractPredictorConstr
+):
     """Class to formulate a trained
     :external+sklearn:py:class:`sklearn.ensemble.RandomForestRegressor` in a
     gurobipy model.
@@ -126,7 +128,7 @@ class RandomForestRegressorConstr(SKgetter, AbstractPredictorConstr):
 
         formulation = kwargs.get("formulation", "leaf")
         if formulation in ENSEMBLE_FORMULATIONS:
-            _add_sklearn_tree_ensemble_formulation(
+            self._tree_leaves = _add_sklearn_tree_ensemble_formulation(
                 model,
                 predictor.estimators_,
                 np.ones(predictor.n_estimators),
@@ -170,6 +172,10 @@ class RandomForestRegressorConstr(SKgetter, AbstractPredictorConstr):
                 )
             )
         self.estimators_ = estimators
+        if all(est._tree_leaves is not None for est in estimators):
+            self._tree_leaves = tuple(
+                leaves for est in estimators for leaves in est._tree_leaves
+            )
 
         model.addConstr(predictor.n_estimators * output == tree_vars.sum(axis=1))
 

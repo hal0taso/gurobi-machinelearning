@@ -15,12 +15,45 @@
 
 """Utilities for modeling decision trees"""
 
+from typing import NamedTuple
 from warnings import warn
 
+import gurobipy as gp
 import numpy as np
 from gurobipy import GRB
 
 from ..base_predictor_constr import AbstractPredictorConstr
+
+
+class TreeLeaves(NamedTuple):
+    """Leaf variables of one tree: ``variables[k, j]`` is 1 (or carries the
+    unit flow) when input row ``k`` reaches leaf node ``nodes[j]``; ``j``
+    runs over the leaves reachable given the input variable bounds."""
+
+    variables: gp.MVar
+    nodes: np.ndarray
+
+
+class TreeLeavesAccessor:
+    """Mixin exposing per-tree leaf variables."""
+
+    _tree_leaves = None
+
+    @property
+    def tree_leaves(self):
+        """Tuple of :py:class:`TreeLeaves`, one per tree.
+
+        Raises
+        ------
+        AttributeError
+            If the formulation does not expose leaf variables (``"paths"``).
+        """
+        if self._tree_leaves is None:
+            raise AttributeError(
+                "this predictor constraint's formulation does not expose "
+                "per-tree leaf variables"
+            )
+        return self._tree_leaves
 
 
 def _compute_leafs_bounds(gp_model, tree, feature_is_fixed, epsilon, safety_floor=0.0):
@@ -217,6 +250,8 @@ def _leafs_formulation(
     if verbose:
         timer.timing(f"Added {nex} linear constraints")
 
+    return TreeLeaves(leafs_vars, active_leaf_nodes)
+
 
 def _paths_formulation(
     gp_model, _input, output, tree, epsilon, _name_var, safety_floor=0.0
@@ -330,7 +365,7 @@ def _paths_formulation(
     gp_model.addConstr(output >= np.min(tree["value"], axis=0))
 
 
-class AbstractTreeEstimator(AbstractPredictorConstr):
+class AbstractTreeEstimator(TreeLeavesAccessor, AbstractPredictorConstr):
     """Abstract class to model a decision tree
 
     The decision tree should be stored in a dictionary with a similar representation
@@ -378,7 +413,7 @@ class AbstractTreeEstimator(AbstractPredictorConstr):
         )
 
         if self._formulation in ("leafs", "leaf"):
-            _leafs_formulation(
+            leaves = _leafs_formulation(
                 self.gp_model,
                 self.input,
                 self.output,
@@ -389,6 +424,7 @@ class AbstractTreeEstimator(AbstractPredictorConstr):
                 self._timer,
                 self._safety_floor,
             )
+            self._tree_leaves = (leaves,)
         elif self._formulation == "paths":
             _paths_formulation(
                 self.gp_model,
@@ -401,7 +437,7 @@ class AbstractTreeEstimator(AbstractPredictorConstr):
             )
         elif self._formulation in ENSEMBLE_FORMULATIONS:
             # A lone decision tree is an ensemble of one tree.
-            add_tree_ensemble_formulation(
+            self._tree_leaves = add_tree_ensemble_formulation(
                 self.gp_model,
                 [self._tree],
                 np.ones(1),

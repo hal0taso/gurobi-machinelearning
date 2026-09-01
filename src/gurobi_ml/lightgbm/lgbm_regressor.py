@@ -28,6 +28,7 @@ from ..modeling import AbstractPredictorConstr
 from ..modeling.decision_tree import (
     ENSEMBLE_FORMULATIONS,
     AbstractTreeEstimator,
+    TreeLeavesAccessor,
     add_tree_ensemble_formulation,
 )
 
@@ -159,7 +160,7 @@ def add_lgbm_booster_constr(
     )
 
 
-class LGBMConstr(AbstractPredictorConstr):
+class LGBMConstr(TreeLeavesAccessor, AbstractPredictorConstr):
     """Class to model trained :external+lightgbm:py:class:`lightgbm.Booster`
     in a gurobipy model.
 
@@ -340,7 +341,7 @@ class LGBMConstr(AbstractPredictorConstr):
                 flat_tree = self._flat_tree_representation(tree["tree_structure"])
                 flat_tree["n_features"] = lgbm_raw["max_feature_idx"] + 1
                 trees.append(flat_tree)
-            add_tree_ensemble_formulation(
+            self._tree_leaves = add_tree_ensemble_formulation(
                 model,
                 trees,
                 np.ones(n_estimators),
@@ -383,6 +384,10 @@ class LGBMConstr(AbstractPredictorConstr):
             )
 
         self.estimators_ = estimators
+        if all(est._tree_leaves is not None for est in estimators):
+            self._tree_leaves = tuple(
+                leaves for est in estimators for leaves in est._tree_leaves
+            )
 
         model.addConstr(output == tree_vars.sum(axis=1))
 

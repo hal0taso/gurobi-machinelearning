@@ -42,7 +42,7 @@ from warnings import warn
 import numpy as np
 from gurobipy import GRB
 
-from .decision_tree_model import _compute_reachability
+from .decision_tree_model import TreeLeaves, _compute_reachability
 
 
 class OrdinalMuVariables:
@@ -243,4 +243,5 @@ def add_ocean_tree(
     active_leaves = [node for node in active_nodes if children_left[node] < 0]
     leaf_columns = [column[node] for node in active_leaves]
     values = tree["value"][active_leaves, :]
-    return flow[:, leaf_columns] @ values, values
+    leaf_flow = flow[:, leaf_columns]
+    return leaf_flow @ values, values, TreeLeaves(leaf_flow, np.array(active_leaves))

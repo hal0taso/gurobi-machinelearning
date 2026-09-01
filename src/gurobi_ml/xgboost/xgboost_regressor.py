@@ -38,6 +38,7 @@ from ..modeling import AbstractPredictorConstr
 from ..modeling.decision_tree import (
     ENSEMBLE_FORMULATIONS,
     AbstractTreeEstimator,
+    TreeLeavesAccessor,
     add_tree_ensemble_formulation,
 )
 
@@ -169,7 +170,7 @@ def add_xgboost_regressor_constr(
     )
 
 
-class XGBoostRegressorConstr(AbstractPredictorConstr):
+class XGBoostRegressorConstr(TreeLeavesAccessor, AbstractPredictorConstr):
     """Class to model trained :external+xgb:py:class:`xgboost.Booster`
     in a gurobipy model.
 
@@ -280,7 +281,7 @@ class XGBoostRegressorConstr(AbstractPredictorConstr):
             trees_sum = model.addMVar(
                 (nex, 1), lb=-GRB.INFINITY, name=self._name_var("trees_sum")
             )
-            add_tree_ensemble_formulation(
+            self._tree_leaves = add_tree_ensemble_formulation(
                 model,
                 [self._xgb_tree_to_dict(tree, self.epsilon) for tree in trees],
                 np.ones(n_estimators),
@@ -317,6 +318,10 @@ class XGBoostRegressorConstr(AbstractPredictorConstr):
                 )
 
             self.estimators_ = estimators
+            if all(est._tree_leaves is not None for est in estimators):
+                self._tree_leaves = tuple(
+                    leaves for est in estimators for leaves in est._tree_leaves
+                )
             trees_sum = tree_vars.sum(axis=1)
 
         base_score_raw = xgb_raw["learner"]["learner_model_param"]["base_score"]

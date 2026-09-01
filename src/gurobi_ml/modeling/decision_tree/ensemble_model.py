@@ -93,6 +93,11 @@ def add_tree_ensemble_formulation(
         ensembles pass the number of trees here, so that the leaf values
         enter the model unscaled and the only scaling coefficient is an
         exact integer on ``output``. Defaults to 1.
+
+    Returns
+    -------
+    tuple of TreeLeaves
+        The leaf variables of each tree.
     """
     try:
         tree_builder = _TREE_BUILDERS[formulation]
@@ -133,8 +138,9 @@ def add_tree_ensemble_formulation(
     output_lb = np.full(outdim, float(constant))
     output_ub = np.full(outdim, float(constant))
     total = constant
+    tree_leaves = []
     for i, (tree, weight) in enumerate(zip(trees, weights)):
-        expression, values = tree_builder(
+        expression, values, leaves = tree_builder(
             gp_model,
             split_vars,
             tree,
@@ -143,6 +149,7 @@ def add_tree_ensemble_formulation(
             name=_name_var(f"y[{i}]"),
             safety_floor=safety_floor,
         )
+        tree_leaves.append(leaves)
         total = total + weight * expression
         output_lb += np.minimum(
             weight * values.min(axis=0), weight * values.max(axis=0)
@@ -154,3 +161,4 @@ def add_tree_ensemble_formulation(
     gp_model.addConstr(output_coef * output == total)
     gp_model.addConstr(output_coef * output >= output_lb)
     gp_model.addConstr(output_coef * output <= output_ub)
+    return tuple(tree_leaves)
