@@ -18,11 +18,16 @@
 into a :external+gurobi:py:class:`Model`.
 """
 
+import numpy as np
 from gurobipy import GRB
 
 from ..exceptions import ModelConfigurationError
 from ..modeling import AbstractPredictorConstr
-from .decision_tree_regressor import add_decision_tree_regressor_constr
+from ..modeling.decision_tree import ENSEMBLE_FORMULATIONS, TreeLeavesAccessor
+from .decision_tree_regressor import (
+    _add_sklearn_tree_ensemble_formulation,
+    add_decision_tree_regressor_constr,
+)
 from .skgetter import SKgetter
 
 
@@ -82,7 +87,9 @@ def add_gradient_boosting_regressor_constr(
     )
 
 
-class GradientBoostingRegressorConstr(SKgetter, AbstractPredictorConstr):
+class GradientBoostingRegressorConstr(
+    SKgetter, TreeLeavesAccessor, AbstractPredictorConstr
+):
     """Class to formulate a trained
     :external+sklearn:py:class:`sklearn.ensemble.GradientBoostingRegressor`
     in a gurobipy model.
@@ -128,6 +135,23 @@ class GradientBoostingRegressorConstr(SKgetter, AbstractPredictorConstr):
                 "Output dimension of gradient boosting regressor should be 1",
             )
 
+        formulation = kwargs.get("formulation", "leaf")
+        if formulation in ENSEMBLE_FORMULATIONS:
+            leaves_and_stats = _add_sklearn_tree_ensemble_formulation(
+                model,
+                [predictor.estimators_[i][0] for i in range(predictor.n_estimators_)],
+                np.full(predictor.n_estimators_, predictor.learning_rate),
+                _input,
+                output,
+                formulation,
+                kwargs.get("epsilon", 0.0),
+                self._name_var,
+                safety_floor=self.safety_floor,
+                constant=predictor.init_.constant_[0][0],
+            )
+            self._tree_leaves, self._ensemble_stats = leaves_and_stats
+            return
+
         if self._no_debug:
             kwargs["no_record"] = True
 
@@ -153,6 +177,10 @@ class GradientBoostingRegressorConstr(SKgetter, AbstractPredictorConstr):
                 )
             )
         self.estimators_ = estimators
+        if all(est._tree_leaves is not None for est in estimators):
+            self._tree_leaves = tuple(
+                leaves for est in estimators for leaves in est._tree_leaves
+            )
 
         constant = predictor.init_.constant_
         model.addConstr(
@@ -178,4 +206,10 @@ class GradientBoostingRegressorConstr(SKgetter, AbstractPredictorConstr):
             return
         print(file=file)
 
-        self._print_container_steps("Estimator", self.estimators_, file=file)
+        if self._ensemble_stats is not None:
+            # Ensemble formulations have no per-tree sub-estimators (and
+            # their shared variables belong to no tree) — print the size
+            # decomposition by structural block instead.
+            self._print_ensemble_stats(file=file)
+        elif self.estimators_:
+            self._print_container_steps("Estimator", self.estimators_, file=file)

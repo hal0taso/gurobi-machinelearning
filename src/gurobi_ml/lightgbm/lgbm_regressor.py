@@ -25,7 +25,12 @@ from gurobipy import GRB
 
 from ..exceptions import ModelConfigurationError, NoSolutionError
 from ..modeling import AbstractPredictorConstr
-from ..modeling.decision_tree import AbstractTreeEstimator
+from ..modeling.decision_tree import (
+    ENSEMBLE_FORMULATIONS,
+    AbstractTreeEstimator,
+    TreeLeavesAccessor,
+    add_tree_ensemble_formulation,
+)
 
 
 def add_lgbmregressor_constr(
@@ -155,7 +160,7 @@ def add_lgbm_booster_constr(
     )
 
 
-class LGBMConstr(AbstractPredictorConstr):
+class LGBMConstr(TreeLeavesAccessor, AbstractPredictorConstr):
     """Class to model trained :external+lightgbm:py:class:`lightgbm.Booster`
     in a gurobipy model.
 
@@ -329,6 +334,26 @@ class LGBMConstr(AbstractPredictorConstr):
 
         n_estimators = len(trees_raw)
 
+        formulation = kwargs.get("formulation", "leaf")
+        if formulation in ENSEMBLE_FORMULATIONS:
+            trees = []
+            for tree in trees_raw:
+                flat_tree = self._flat_tree_representation(tree["tree_structure"])
+                flat_tree["n_features"] = lgbm_raw["max_feature_idx"] + 1
+                trees.append(flat_tree)
+            self._tree_leaves, self._ensemble_stats = add_tree_ensemble_formulation(
+                model,
+                trees,
+                np.ones(n_estimators),
+                _input,
+                output,
+                formulation,
+                self.epsilon,
+                self._name_var,
+                safety_floor=self.safety_floor,
+            )
+            return
+
         estimators = []
         if self._no_debug:
             kwargs["no_record"] = True
@@ -359,6 +384,10 @@ class LGBMConstr(AbstractPredictorConstr):
             )
 
         self.estimators_ = estimators
+        if all(est._tree_leaves is not None for est in estimators):
+            self._tree_leaves = tuple(
+                leaves for est in estimators for leaves in est._tree_leaves
+            )
 
         model.addConstr(output == tree_vars.sum(axis=1))
 
@@ -381,6 +410,11 @@ class LGBMConstr(AbstractPredictorConstr):
             return
         print(file=file)
 
+        if self._ensemble_stats is not None:
+            # Ensemble formulations have no per-tree sub-estimators (and
+            # their shared variables belong to no tree) — print the size
+            # decomposition by structural block instead.
+            self._print_ensemble_stats(file=file)
         # self._print_container_steps("Estimator", self.estimators_, file=file)
 
     def get_error(self, eps=None):

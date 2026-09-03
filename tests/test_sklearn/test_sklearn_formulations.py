@@ -86,6 +86,72 @@ class TestSklearnModel(FixedRegressionModel):
                 self.do_one_case(onecase, X, 5, "all", **kwargs)
                 self.do_one_case(onecase, X, 6, "pairs", **kwargs)
 
+    def _diabetes_sklearn_ensemble(self, formulation, include_pipelines=True):
+        """Run the tree cases of the diabetes suite with an ensemble
+        formulation.
+
+        A separate test method per formulation puts the formulation's name
+        in the tox report and, since ``setUp`` reseeds the generator, every
+        formulation is tested on identical example sets. See the epsilon
+        policy comment below.
+        """
+        data = datasets.load_diabetes()
+
+        X = data["data"]
+        cases = DiabetesCases()
+
+        tree_regressors = [
+            "DecisionTreeRegressor",
+            "RandomForestRegressor",
+            "GradientBoostingRegressor",
+        ]
+        for regressor in cases:
+            if isinstance(regressor, Pipeline):
+                if not include_pipelines:
+                    continue
+                actual_reg = regressor[-1]
+            else:
+                actual_reg = regressor
+            if type(actual_reg).__name__ not in tree_regressors:
+                continue
+
+            onecase = cases.get_case(regressor)
+            # epsilon=1e-5 keeps solver vertices off the thresholds (at
+            # epsilon=0 a vertex on a threshold can be float32-routed to the
+            # other side by predict). PolynomialFeatures pipelines are the
+            # exception: their derived features have attainable ranges
+            # narrower than any useful epsilon, and the ensemble
+            # formulations apply epsilon globally — so they run at the
+            # default epsilon=0.
+            epsilon = 0.0 if onecase["nonconvex"] else 1e-5
+            kwargs = {
+                "float_type": np.float32,
+                "epsilon": epsilon,
+                "formulation": formulation,
+            }
+
+            self.do_one_case(onecase, X, 5, "all", **kwargs)
+            self.do_one_case(onecase, X, 6, "pairs", **kwargs)
+
+            kwargs["no_debug"] = True
+            self.do_one_case(onecase, X, 5, "all", **kwargs)
+            self.do_one_case(onecase, X, 6, "pairs", **kwargs)
+
+    def test_diabetes_sklearn_misic(self):
+        self._diabetes_sklearn_ensemble("misic")
+
+    def test_diabetes_sklearn_parmentier_vidal(self):
+        self._diabetes_sklearn_ensemble("parmentier_vidal")
+
+    def test_diabetes_sklearn_ocean(self):
+        # Pipelines are excluded: their intermediate variables are unbounded
+        # and the ocean formulation requires finite bounds on split features.
+        self._diabetes_sklearn_ensemble("ocean", include_pipelines=False)
+
+    def test_diabetes_sklearn_biggs_perakis(self):
+        # Pipelines excluded for the same finite-bounds reason as ocean.
+        self._diabetes_sklearn_ensemble("biggs_perakis", include_pipelines=False)
+
     def test_iris_proba(self):
         data = datasets.load_iris()
 
@@ -176,6 +242,49 @@ class TestSklearnModel(FixedRegressionModel):
                 kwargs["no_debug"] = True
                 self.do_one_case(onecase, X, 5, "all", **kwargs)
                 self.do_one_case(onecase, X, 6, "pairs", **kwargs)
+
+    def _circle_ensemble(self, formulation, include_pipelines=True):
+        """Run the multi-output circle cases with an ensemble formulation
+        (see _diabetes_sklearn_ensemble for the method-per-formulation
+        rationale)."""
+        cases = CircleCase()
+
+        for regressor in cases:
+            if isinstance(regressor, Pipeline):
+                if not include_pipelines:
+                    continue
+                actual_reg = regressor[-1]
+            else:
+                actual_reg = regressor
+            reg_name = type(actual_reg).__name__
+            if reg_name not in ["RandomForestRegressor", "DecisionTreeRegressor"]:
+                continue
+
+            onecase = cases.get_case(regressor)
+            X = onecase["data"]
+            # See _diabetes_sklearn_ensemble for the epsilon policy.
+            epsilon = 0.0 if onecase["nonconvex"] else 1e-5
+            kwargs = {"formulation": formulation, "epsilon": epsilon}
+
+            self.do_one_case(onecase, X, 5, "all", **kwargs)
+            self.do_one_case(onecase, X, 6, "pairs", **kwargs)
+
+            kwargs["no_debug"] = True
+            self.do_one_case(onecase, X, 5, "all", **kwargs)
+            self.do_one_case(onecase, X, 6, "pairs", **kwargs)
+
+    def test_circle_misic(self):
+        self._circle_ensemble("misic")
+
+    def test_circle_parmentier_vidal(self):
+        self._circle_ensemble("parmentier_vidal")
+
+    def test_circle_ocean(self):
+        # See test_diabetes_sklearn_ocean for the pipeline exclusion.
+        self._circle_ensemble("ocean", include_pipelines=False)
+
+    def test_circle_biggs_perakis(self):
+        self._circle_ensemble("biggs_perakis", include_pipelines=False)
 
 
 class TestMNIST(unittest.TestCase):
