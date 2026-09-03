@@ -98,11 +98,39 @@ def add_tree_ensemble_formulation(
     -------
     tuple of TreeLeaves
         The leaf variables of each tree.
+    dict
+        Size statistics of the formulation, decomposed by structural
+        block (the shared variables, each tree, the linking rows) —
+        consumed by ``print_stats``.
     """
     try:
         tree_builder = _TREE_BUILDERS[formulation]
     except KeyError:
         raise ValueError(f"Unknown formulation: {formulation}") from None
+
+    def _snapshot():
+        gp_model.update()
+        return np.array(
+            [
+                gp_model.NumVars,
+                gp_model.NumBinVars,
+                gp_model.NumConstrs,
+                gp_model.NumQConstrs,
+                gp_model.NumGenConstrs,
+            ]
+        )
+
+    def _block(before, after):
+        vars_, binaries, linear, quadratic, general = (after - before).tolist()
+        return {
+            "vars": vars_,
+            "binaries": binaries,
+            "linear": linear,
+            "quadratic": quadratic,
+            "general": general,
+        }
+
+    snapshot = _snapshot()
 
     # The projected Biggs-Perakis formulation shares no ensemble-level
     # variables: its epsilon lives in the per-tree leaf boxes and acts
@@ -133,6 +161,9 @@ def add_tree_ensemble_formulation(
         split_vars = shared_variables(
             gp_model, trees, _input, epsilon, _name_var, safety_floor
         )
+    previous, snapshot = snapshot, _snapshot()
+    shared_block = _block(previous, snapshot)
+    tree_blocks = []
 
     outdim = output.shape[1]
     output_lb = np.full(outdim, float(constant))
@@ -150,6 +181,8 @@ def add_tree_ensemble_formulation(
             safety_floor=safety_floor,
         )
         tree_leaves.append(leaves)
+        previous, snapshot = snapshot, _snapshot()
+        tree_blocks.append(_block(previous, snapshot))
         total = total + weight * expression
         output_lb += np.minimum(
             weight * values.min(axis=0), weight * values.max(axis=0)
@@ -161,4 +194,12 @@ def add_tree_ensemble_formulation(
     gp_model.addConstr(output_coef * output == total)
     gp_model.addConstr(output_coef * output >= output_lb)
     gp_model.addConstr(output_coef * output <= output_ub)
-    return tuple(tree_leaves)
+
+    stats = {
+        "formulation": formulation,
+        "n_trees": len(trees),
+        "shared": shared_block,
+        "trees": tree_blocks,
+        "linking": _block(snapshot, _snapshot()),
+    }
+    return tuple(tree_leaves), stats

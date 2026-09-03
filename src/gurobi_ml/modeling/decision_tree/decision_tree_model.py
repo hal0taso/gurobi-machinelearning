@@ -38,6 +38,21 @@ class TreeLeavesAccessor:
     """Mixin exposing per-tree leaf variables."""
 
     _tree_leaves = None
+    _ensemble_stats = None
+
+    #: What the shared variables of each ensemble formulation are.
+    _SHARED_LABELS = {
+        "misic": "split binaries z, one per distinct unfixed threshold",
+        "parmentier_vidal": "split binaries z, one per distinct unfixed threshold",
+        "ocean": "interval fractions mu, continuous",
+    }
+    #: What the per-tree variables of each ensemble formulation are.
+    _TREE_LABELS = {
+        "misic": "leaf weights, continuous",
+        "parmentier_vidal": "node flows (continuous) + depth branching binaries",
+        "ocean": "node flows (continuous) + depth branching binaries",
+        "biggs_perakis": "leaf selectors, binary",
+    }
 
     @property
     def tree_leaves(self):
@@ -54,6 +69,53 @@ class TreeLeavesAccessor:
                 "per-tree leaf variables"
             )
         return self._tree_leaves
+
+    def _print_ensemble_stats(self, file=None):
+        """Print the size structure of an ensemble formulation as a table.
+
+        The ensemble formulations build the whole ensemble at once — there
+        are no per-tree sub-estimators, and the shared variables belong to
+        no tree — so the per-estimator table is replaced by one row per
+        structural block: the shared variables, each tree, and the output
+        linking rows. The Binaries column separates the integer part of
+        each block — the size driver the formulations differ in.
+        """
+        stats = self._ensemble_stats
+        formulation = stats["formulation"]
+        header = (
+            f"{'Block':13} {'Output Shape':>14} {'Variables':>12} "
+            f"{'Binaries':>12} {'Constraints':^38}"
+        )
+
+        def _row(label, block):
+            print(
+                f"{label:13} {'-':>14} {block['vars']:>12} "
+                f"{block['binaries']:>12} {block['linear']:>12} "
+                f"{block['quadratic']:>12} {block['general']:>12}",
+                file=file,
+            )
+
+        print(
+            f"Ensemble formulation '{formulation}': {stats['n_trees']} trees",
+            file=file,
+        )
+        shared_label = self._SHARED_LABELS.get(formulation)
+        if shared_label is not None:
+            print(f"Shared variables: {shared_label}.", file=file)
+        print(f"Per-tree variables: {self._TREE_LABELS[formulation]}.", file=file)
+        print("-" * len(header), file=file)
+        print(header, file=file)
+        print(
+            f"{' ' * 54} {'Linear':>12} {'Quadratic':>12} {'General':>12}",
+            file=file,
+        )
+        print("=" * len(header), file=file)
+        if shared_label is not None:
+            _row("shared", stats["shared"])
+        for i, block in enumerate(stats["trees"]):
+            _row(f"tree{i}", block)
+        _row("linking", stats["linking"])
+        print("-" * len(header), file=file)
 
 
 def _compute_leafs_bounds(gp_model, tree, feature_is_fixed, epsilon, safety_floor=0.0):
@@ -437,7 +499,7 @@ class AbstractTreeEstimator(TreeLeavesAccessor, AbstractPredictorConstr):
             )
         elif self._formulation in ENSEMBLE_FORMULATIONS:
             # A lone decision tree is an ensemble of one tree.
-            self._tree_leaves = add_tree_ensemble_formulation(
+            self._tree_leaves, self._ensemble_stats = add_tree_ensemble_formulation(
                 self.gp_model,
                 [self._tree],
                 np.ones(1),

@@ -128,7 +128,7 @@ class RandomForestRegressorConstr(
 
         formulation = kwargs.get("formulation", "leaf")
         if formulation in ENSEMBLE_FORMULATIONS:
-            self._tree_leaves = _add_sklearn_tree_ensemble_formulation(
+            leaves_and_stats = _add_sklearn_tree_ensemble_formulation(
                 model,
                 predictor.estimators_,
                 np.ones(predictor.n_estimators),
@@ -140,6 +140,7 @@ class RandomForestRegressorConstr(
                 safety_floor=self.safety_floor,
                 output_coef=predictor.n_estimators,
             )
+            self._tree_leaves, self._ensemble_stats = leaves_and_stats
             return
 
         if self._no_debug:
@@ -198,4 +199,10 @@ class RandomForestRegressorConstr(
             return
         print(file=file)
 
-        self._print_container_steps("Estimator", self.estimators_, file=file)
+        if self._ensemble_stats is not None:
+            # Ensemble formulations have no per-tree sub-estimators (and
+            # their shared variables belong to no tree) — print the size
+            # decomposition by structural block instead.
+            self._print_ensemble_stats(file=file)
+        elif self.estimators_:
+            self._print_container_steps("Estimator", self.estimators_, file=file)

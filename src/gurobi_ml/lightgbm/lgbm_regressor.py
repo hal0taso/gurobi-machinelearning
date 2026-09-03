@@ -341,7 +341,7 @@ class LGBMConstr(TreeLeavesAccessor, AbstractPredictorConstr):
                 flat_tree = self._flat_tree_representation(tree["tree_structure"])
                 flat_tree["n_features"] = lgbm_raw["max_feature_idx"] + 1
                 trees.append(flat_tree)
-            self._tree_leaves = add_tree_ensemble_formulation(
+            self._tree_leaves, self._ensemble_stats = add_tree_ensemble_formulation(
                 model,
                 trees,
                 np.ones(n_estimators),
@@ -410,6 +410,11 @@ class LGBMConstr(TreeLeavesAccessor, AbstractPredictorConstr):
             return
         print(file=file)
 
+        if self._ensemble_stats is not None:
+            # Ensemble formulations have no per-tree sub-estimators (and
+            # their shared variables belong to no tree) — print the size
+            # decomposition by structural block instead.
+            self._print_ensemble_stats(file=file)
         # self._print_container_steps("Estimator", self.estimators_, file=file)
 
     def get_error(self, eps=None):

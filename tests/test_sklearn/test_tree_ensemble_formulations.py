@@ -15,6 +15,7 @@ this module checks:
   number of distinct split thresholds — independent of the number of trees.
 """
 
+import io
 import unittest
 import warnings
 
@@ -674,6 +675,74 @@ class TestModelSize(unittest.TestCase):
                         gpm.NumVars,
                         nex * X.shape[1] + nex + nex * n_leaves,
                     )
+
+
+class TestPrintStats(unittest.TestCase):
+    """The ensemble formulations print a block-structured size summary in
+    ``print_stats`` — they have no per-tree sub-estimators, and the shared
+    variables belong to no tree — while the per-tree leaf path keeps its
+    per-estimator table."""
+
+    def setUp(self):
+        data = datasets.load_diabetes()
+        X, y = data["data"], data["target"]
+        self.X = X
+        self.predictor = GradientBoostingRegressor(
+            n_estimators=3, max_depth=3, random_state=0
+        ).fit(X, y)
+
+    def _print_stats(self, formulation):
+        params = {"OutputFlag": 0}
+        with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+            x = gpm.addMVar(
+                (1, self.X.shape[1]),
+                lb=self.X.min(axis=0),
+                ub=self.X.max(axis=0),
+            )
+            pred_constr = add_predictor_constr(
+                gpm, self.predictor, x, formulation=formulation
+            )
+            gpm.update()
+            output = io.StringIO()
+            pred_constr.print_stats(file=output)
+            return output.getvalue(), gpm.NumBinVars
+
+    def test_ensemble_formulations_print_block_table(self):
+        for formulation in ("misic", "parmentier_vidal", "ocean", "biggs_perakis"):
+            with self.subTest(formulation=formulation):
+                output, _ = self._print_stats(formulation)
+                self.assertIn(f"Ensemble formulation '{formulation}': 3 trees", output)
+                # One table row per structural block: each tree plus the
+                # output linking rows.
+                self.assertIn("Block", output)
+                self.assertIn("tree0", output)
+                self.assertIn("tree2", output)
+                self.assertIn("linking", output)
+                # No per-estimator table, and no dangling empty header.
+                self.assertNotIn("Estimator", output)
+
+    def test_table_binaries_match_model(self):
+        # The Binaries column must add up to the model's binary count, and
+        # only the shared-variable formulations print a shared row.
+        for formulation, has_shared in (("misic", True), ("biggs_perakis", False)):
+            with self.subTest(formulation=formulation):
+                output, num_bin_vars = self._print_stats(formulation)
+                lines = output.splitlines()
+                start = next(i for i, s in enumerate(lines) if s.startswith("="))
+                rows = [
+                    line.split()
+                    for line in lines[start + 1 :]
+                    if line and not line.startswith("-")
+                ]
+                self.assertEqual(sum(int(tokens[-4]) for tokens in rows), num_bin_vars)
+                self.assertEqual(
+                    any(tokens[0] == "shared" for tokens in rows), has_shared
+                )
+
+    def test_leaf_keeps_estimator_table(self):
+        output, _ = self._print_stats("leaf")
+        self.assertIn("Estimator", output)
+        self.assertNotIn("Ensemble formulation", output)
 
 
 if __name__ == "__main__":

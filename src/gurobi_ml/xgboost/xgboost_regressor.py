@@ -281,7 +281,7 @@ class XGBoostRegressorConstr(TreeLeavesAccessor, AbstractPredictorConstr):
             trees_sum = model.addMVar(
                 (nex, 1), lb=-GRB.INFINITY, name=self._name_var("trees_sum")
             )
-            self._tree_leaves = add_tree_ensemble_formulation(
+            self._tree_leaves, self._ensemble_stats = add_tree_ensemble_formulation(
                 model,
                 [self._xgb_tree_to_dict(tree, self.epsilon) for tree in trees],
                 np.ones(n_estimators),
@@ -387,6 +387,11 @@ class XGBoostRegressorConstr(TreeLeavesAccessor, AbstractPredictorConstr):
             return
         print(file=file)
 
+        if self._ensemble_stats is not None:
+            # Ensemble formulations have no per-tree sub-estimators (and
+            # their shared variables belong to no tree) — print the size
+            # decomposition by structural block instead.
+            self._print_ensemble_stats(file=file)
         # self._print_container_steps("Estimator", self.estimators_, file=file)
 
     def get_error(self, eps=None):

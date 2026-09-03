@@ -5,6 +5,7 @@ Mirrors the cross-formulation agreement, lifecycle and model-size tests of
 are documented) for the LightGBM wiring.
 """
 
+import io
 import unittest
 import warnings
 
@@ -462,6 +463,27 @@ class TestModelSize(unittest.TestCase):
                         gpm.NumVars,
                         nex * X.shape[1] + nex + nex * n_leaves,
                     )
+
+
+class TestPrintStats(unittest.TestCase):
+    """``print_stats`` shows the block-structured ensemble summary (mirrors
+    the sklearn test, where the checks are documented)."""
+
+    def test_misic_block_summary(self):
+        data = datasets.load_diabetes()
+        X, y = data["data"], data["target"]
+        predictor = lgb.sklearn.LGBMRegressor(
+            n_estimators=3, max_depth=3, random_state=0, verbose=-1
+        ).fit(X, y)
+        params = {"OutputFlag": 0}
+        with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+            x = gpm.addMVar((1, X.shape[1]), lb=X.min(axis=0), ub=X.max(axis=0))
+            pred_constr = add_predictor_constr(gpm, predictor, x, formulation="misic")
+            output = io.StringIO()
+            pred_constr.print_stats(file=output)
+        self.assertIn("Ensemble formulation 'misic': 3 trees", output.getvalue())
+        self.assertIn("Shared variables:", output.getvalue())
+        self.assertNotIn("Estimator", output.getvalue())
 
 
 if __name__ == "__main__":

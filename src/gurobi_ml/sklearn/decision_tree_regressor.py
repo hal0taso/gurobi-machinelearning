@@ -56,7 +56,8 @@ def _add_sklearn_tree_ensemble_formulation(
 
     Shared by the gradient boosting and random forest classes; they differ
     only in how the tree predictions are combined. Returns the per-tree
-    leaf variables of :py:func:`add_tree_ensemble_formulation`.
+    leaf variables and the size-statistics record of
+    :py:func:`add_tree_ensemble_formulation`.
     """
     trees = [_sklearn_tree_to_dict(estimator.tree_) for estimator in estimators]
     return add_tree_ensemble_formulation(
