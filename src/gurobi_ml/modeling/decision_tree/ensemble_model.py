@@ -132,11 +132,11 @@ def add_tree_ensemble_formulation(
 
     snapshot = _snapshot()
 
-    # The projected Biggs-Perakis formulation shares no ensemble-level
-    # variables: its epsilon lives in the per-tree leaf boxes and acts
-    # path-wise like the leaf baseline, so the global-epsilon warning does
-    # not apply.
-    if epsilon > 0.0 and formulation != "biggs_perakis":
+    # Only the shared binary split variables make epsilon global: they take
+    # a value whether or not a tree traverses that split. The epsilon of
+    # "biggs_perakis" lives in the per-tree leaf boxes and that of "ocean"
+    # in the flow linking, so both act path-wise like the leaf baseline.
+    if epsilon > 0.0 and formulation in ("misic", "parmentier_vidal"):
         warn(
             f"epsilon={epsilon} with the '{formulation}' formulation applies "
             "globally: the band (t, t + epsilon) of every threshold of the "

@@ -31,6 +31,14 @@ constraints. Flow through a split forces the adjacent ``mu`` values:
 going right forces the interval below the threshold to be fully crossed,
 going left forbids entering the interval above it.
 
+A positive ``epsilon`` is absorbed into that partition rather than into
+the linking rows: each threshold ``v`` contributes the two boundaries
+``v`` and ``v + epsilon``, so the band it forbids is a hole of the
+feature's domain with an interval boundary at each end. Going left binds
+the lower end, going right the upper one, and both stay single-term rows.
+At ``epsilon = 0`` the two boundaries coincide and the encoding is
+identical to the plain one.
+
 The interval widths appear as constraint coefficients, so every feature
 used in a split must have **finite bounds** (the paper assumes bounded
 feature domains); a :py:exc:`ValueError` is raised otherwise. This is a
@@ -50,7 +58,6 @@ class OrdinalMuVariables:
 
     def __init__(self, gp_model, trees, _input, epsilon, _name_var, safety_floor=0.0):
         self._safety_floor = safety_floor
-        self._epsilon = epsilon
         nex, n_features = _input.shape
 
         input_lb = _input.getAttr(GRB.Attr.LB)
@@ -74,7 +81,8 @@ class OrdinalMuVariables:
 
         self._thresholds = {}
         self._mu = {}
-        self._widths = {}
+        self._left_pos = {}
+        self._right_pos = {}
         for f in range(n_features):
             values = np.unique(split_thresholds[split_features == f])
             if values.size == 0:
@@ -98,20 +106,34 @@ class OrdinalMuVariables:
                     "ranges) or use another formulation."
                 )
 
-            # Interval boundaries per example: bounds plus the thresholds
-            # clipped into them. Thresholds outside an example's bounds give
+            # A positive epsilon turns the band above each threshold into a
+            # hole of the domain, so both of its ends become boundaries. At
+            # epsilon = 0, or on a fixed feature (which epsilon never
+            # constrains), the two ends coincide and only the thresholds
+            # remain.
+            if epsilon > 0.0 and not self.feature_is_fixed[f]:
+                right_ends = values + epsilon
+                boundaries = np.unique(np.concatenate([values, right_ends]))
+            else:
+                right_ends = values
+                boundaries = values
+            left_pos = np.searchsorted(boundaries, values)
+            right_pos = np.searchsorted(boundaries, right_ends)
+
+            # Interval boundaries per example: bounds plus the boundaries
+            # clipped into them. Boundaries outside an example's bounds give
             # zero-width intervals; the corresponding subtrees are pruned by
             # reachability, so their (vacuous) mu values are never forcing.
-            boundaries = np.clip(
-                values[None, :], input_lb[:, [f]], input_ub[:, [f]]
+            clipped = np.clip(
+                boundaries[None, :], input_lb[:, [f]], input_ub[:, [f]]
             )  # (nex, m)
             levels = np.concatenate(
-                [input_lb[:, [f]], boundaries, input_ub[:, [f]]], axis=1
+                [input_lb[:, [f]], clipped, input_ub[:, [f]]], axis=1
             )
             widths = np.diff(levels, axis=1)  # (nex, m + 1)
 
             mu = gp_model.addMVar(
-                (nex, values.size + 1), ub=1.0, name=_name_var(f"mu[{f}]")
+                (nex, boundaries.size + 1), ub=1.0, name=_name_var(f"mu[{f}]")
             )
             # x consumes the intervals in order: the chain is nonincreasing.
             gp_model.addConstr(mu[:, :-1] >= mu[:, 1:])
@@ -122,17 +144,17 @@ class OrdinalMuVariables:
 
             self._thresholds[f] = values
             self._mu[f] = mu
-            self._widths[f] = widths
+            self._left_pos[f] = left_pos
+            self._right_pos[f] = right_pos
 
     def link_split(self, gp_model, feature, threshold, flow_left, flow_right):
         """Force the mu chain consistent with a split's flow variables.
 
-        Threshold ``v_j`` separates interval ``j`` (ending at ``v_j``) from
-        interval ``j + 1``; going right requires interval ``j`` fully
-        crossed, going left forbids entering interval ``j + 1``. A positive
-        epsilon additionally requires the right branch to cross ``epsilon``
-        into interval ``j + 1`` (the paper's margin device, with our
-        absolute epsilon: ``mu[j+1] >= (epsilon / width) * flow_right``).
+        Going left requires ``x <= v_j``, so the interval starting at
+        ``v_j`` must not be entered; going right requires
+        ``x >= v_j + epsilon``, so the interval ending at ``v_j + epsilon``
+        must be fully crossed. Both ends are boundaries of the partition,
+        so epsilon appears only through the index of the second one.
         """
         values = self._thresholds[feature]
         threshold_clamped = threshold
@@ -143,18 +165,9 @@ class OrdinalMuVariables:
         mu = self._mu[feature]
 
         if flow_left is not None:
-            gp_model.addConstr(flow_left <= 1 - mu[:, j + 1])
+            gp_model.addConstr(flow_left <= 1 - mu[:, self._left_pos[feature][j] + 1])
         if flow_right is not None:
-            gp_model.addConstr(flow_right <= mu[:, j])
-            if self._epsilon > 0.0 and not self.feature_is_fixed[feature]:
-                widths = self._widths[feature][:, j + 1]
-                scale = np.divide(
-                    self._epsilon,
-                    widths,
-                    out=np.zeros_like(widths),
-                    where=widths > 0,
-                )
-                gp_model.addConstr(mu[:, j + 1] >= scale * flow_right)
+            gp_model.addConstr(flow_right <= mu[:, self._right_pos[feature][j]])
 
 
 def add_ocean_tree(

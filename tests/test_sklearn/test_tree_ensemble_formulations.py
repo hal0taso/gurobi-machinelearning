@@ -282,6 +282,26 @@ def _add_predictor_constr_silently(gpm, predictor, x, **kwargs):
         return add_predictor_constr(gpm, predictor, x, **kwargs)
 
 
+def _two_split_chain(lower, upper):
+    """Depth-2 tree ``root(lower) -> [0, node(upper) -> [0, 10]]``.
+
+    Fitted for the shape, then the thresholds and leaf values are set
+    directly: no fitted tree puts two thresholds closer together than the
+    epsilon the tests use.
+    """
+    X = np.array([[0.0], [1.0], [2.0], [3.0]])
+    y = np.array([0.0, 0.0, 5.0, 10.0])
+    predictor = DecisionTreeRegressor(max_depth=2).fit(X, y)
+    tree = predictor.tree_
+    right = tree.children_right[0]
+    tree.threshold[0] = lower
+    tree.threshold[right] = upper
+    tree.value[tree.children_left[0], 0, 0] = 0.0
+    tree.value[tree.children_left[right], 0, 0] = 0.0
+    tree.value[tree.children_right[right], 0, 0] = 10.0
+    return predictor
+
+
 class TestEpsilonAndFixedFeatures(unittest.TestCase):
     """Design decisions 2-3: epsilon semantics and fixed-feature handling."""
 
@@ -328,6 +348,46 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
             self.assertGreaterEqual(
                 x.X[0, 0],
                 self.threshold + epsilon - gpm.Params.FeasibilityTol,
+            )
+
+    def test_thresholds_closer_than_epsilon(self):
+        self._check_thresholds_closer_than_epsilon("leaf")
+
+    def test_thresholds_closer_than_epsilon_misic(self):
+        self._check_thresholds_closer_than_epsilon("misic")
+
+    def test_thresholds_closer_than_epsilon_parmentier_vidal(self):
+        self._check_thresholds_closer_than_epsilon("parmentier_vidal")
+
+    def test_thresholds_closer_than_epsilon_ocean(self):
+        self._check_thresholds_closer_than_epsilon("ocean")
+
+    def test_thresholds_closer_than_epsilon_biggs_perakis(self):
+        self._check_thresholds_closer_than_epsilon("biggs_perakis")
+
+    def _check_thresholds_closer_than_epsilon(self, formulation):
+        """Two thresholds closer together than epsilon must not forbid the
+        branch above them: the right branch of the lower split stays
+        reachable by clearing the upper threshold by epsilon."""
+        epsilon = 1e-4
+        lower, upper = 1.0 + 1e-6, 1.0 + 2e-6
+        predictor = _two_split_chain(lower, upper)
+        params = {"OutputFlag": 0}
+        with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+            x = gpm.addMVar((1, 1), lb=1.0, ub=2.0)
+            pred_constr = _add_predictor_constr_silently(
+                gpm,
+                predictor,
+                x,
+                epsilon=epsilon,
+                formulation=formulation,
+            )
+            gpm.setObjective(pred_constr.output.sum(), GRB.MAXIMIZE)
+            gpm.optimize()
+            self.assertEqual(gpm.Status, GRB.OPTIMAL)
+            self.assertAlmostEqual(pred_constr.output.X[0, 0], 10.0)
+            self.assertGreaterEqual(
+                x.X[0, 0], upper + epsilon - gpm.Params.FeasibilityTol
             )
 
     def test_fixed_feature_in_epsilon_band_is_feasible(self):
@@ -399,22 +459,30 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
                 )
 
     def test_positive_epsilon_warns_for_ensemble_formulation(self):
-        """Ensemble formulations apply epsilon globally (every threshold of
-        every tree, not only along the selected paths); passing a positive
-        epsilon must warn. The leaf formulation stays silent."""
+        """The shared binary split variables apply epsilon globally (every
+        threshold of every tree, not only along the selected paths); passing
+        a positive epsilon must warn. The other formulations stay silent."""
         params = {"OutputFlag": 0}
-        with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
-            x = gpm.addMVar((1, 1), lb=0.0, ub=1.0)
-            with self.assertWarnsRegex(UserWarning, "applies\\s+globally"):
-                add_predictor_constr(
-                    gpm, self.predictor, x, epsilon=1e-2, formulation="misic"
-                )
+        for formulation in ("misic", "parmentier_vidal"):
+            with self.subTest(formulation=formulation):
+                with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+                    x = gpm.addMVar((1, 1), lb=0.0, ub=1.0)
+                    with self.assertWarnsRegex(UserWarning, "applies\\s+globally"):
+                        add_predictor_constr(
+                            gpm,
+                            self.predictor,
+                            x,
+                            epsilon=1e-2,
+                            formulation=formulation,
+                        )
         for formulation, epsilon in (
             ("misic", 0.0),
             ("leaf", 1e-2),
-            # biggs_perakis carries epsilon path-wise in its leaf boxes, so
-            # the global-epsilon warning must not fire for it.
+            # biggs_perakis carries epsilon path-wise in its leaf boxes and
+            # ocean in its flow linking, so the global-epsilon warning must
+            # not fire for either.
             ("biggs_perakis", 1e-2),
+            ("ocean", 1e-2),
         ):
             with self.subTest(formulation=formulation, epsilon=epsilon):
                 with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
