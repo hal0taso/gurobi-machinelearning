@@ -18,10 +18,15 @@
 into a :external+gurobi:py:class:`Model`.
 """
 
+import numpy as np
 from gurobipy import GRB
 
 from ..modeling import AbstractPredictorConstr
-from .decision_tree_regressor import add_decision_tree_regressor_constr
+from ..modeling.decision_tree import ENSEMBLE_FORMULATIONS, TreeLeavesAccessor
+from .decision_tree_regressor import (
+    _add_sklearn_tree_ensemble_formulation,
+    add_decision_tree_regressor_constr,
+)
 from .skgetter import SKgetter
 
 
@@ -81,7 +86,9 @@ def add_random_forest_regressor_constr(
     )
 
 
-class RandomForestRegressorConstr(SKgetter, AbstractPredictorConstr):
+class RandomForestRegressorConstr(
+    SKgetter, TreeLeavesAccessor, AbstractPredictorConstr
+):
     """Class to formulate a trained
     :external+sklearn:py:class:`sklearn.ensemble.RandomForestRegressor` in a
     gurobipy model.
@@ -119,6 +126,23 @@ class RandomForestRegressorConstr(SKgetter, AbstractPredictorConstr):
         output = self._output
         nex = _input.shape[0]
 
+        formulation = kwargs.get("formulation", "leaf")
+        if formulation in ENSEMBLE_FORMULATIONS:
+            leaves_and_stats = _add_sklearn_tree_ensemble_formulation(
+                model,
+                predictor.estimators_,
+                np.ones(predictor.n_estimators),
+                _input,
+                output,
+                formulation,
+                kwargs.get("epsilon", 0.0),
+                self._name_var,
+                safety_floor=self.safety_floor,
+                output_coef=predictor.n_estimators,
+            )
+            self._tree_leaves, self._ensemble_stats = leaves_and_stats
+            return
+
         if self._no_debug:
             kwargs["no_record"] = True
 
@@ -149,6 +173,10 @@ class RandomForestRegressorConstr(SKgetter, AbstractPredictorConstr):
                 )
             )
         self.estimators_ = estimators
+        if all(est._tree_leaves is not None for est in estimators):
+            self._tree_leaves = tuple(
+                leaves for est in estimators for leaves in est._tree_leaves
+            )
 
         model.addConstr(predictor.n_estimators * output == tree_vars.sum(axis=1))
 
@@ -171,4 +199,10 @@ class RandomForestRegressorConstr(SKgetter, AbstractPredictorConstr):
             return
         print(file=file)
 
-        self._print_container_steps("Estimator", self.estimators_, file=file)
+        if self._ensemble_stats is not None:
+            # Ensemble formulations have no per-tree sub-estimators (and
+            # their shared variables belong to no tree) — print the size
+            # decomposition by structural block instead.
+            self._print_ensemble_stats(file=file)
+        elif self.estimators_:
+            self._print_container_steps("Estimator", self.estimators_, file=file)
