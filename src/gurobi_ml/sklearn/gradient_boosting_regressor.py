@@ -206,10 +206,8 @@ class GradientBoostingRegressorConstr(
             Text stream to which output should be redirected. By default sys.stdout.
         """
         super().print_stats(abbrev=abbrev, file=file)
-        if abbrev or self._no_debug:
+        if abbrev or self._no_debug or not self.estimators_:
             return
+        print(file=file)
 
-        # Ensemble formulations have no per-tree sub-estimators.
-        if self.estimators_:
-            print(file=file)
-            self._print_container_steps("Estimator", self.estimators_, file=file)
+        self._print_container_steps("Estimator", self.estimators_, file=file)
