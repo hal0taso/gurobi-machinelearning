@@ -220,36 +220,33 @@ decision tree is an ensemble of one tree). All formulations represent exactly
 the same function; they differ in their size, in the strength of their
 relaxation and in how they behave at a split threshold.
 
-Notation
---------
-
 The ensemble predicts
 
 .. math::
 
-   \hat y(x) = c + \sum_{t=1}^{T} w_t f_t(x),
+   y = c + \sum_{t=1}^{T} w_t f_t(x),
 
 where :math:`f_t(x)` is the value :math:`\text{val}_l` of the leaf :math:`l`
 of tree :math:`t` that :math:`x` reaches, :math:`w_t` is the weight of the tree
 (e.g. the learning rate of gradient boosting) and :math:`c` a constant. For a
 split node :math:`s`, :math:`\text{left}(s)` and :math:`\text{right}(s)` are the
 leaves below its left and right child. For each feature :math:`i`,
-:math:`v_{i,1} < v_{i,2} < \dots < v_{i,m_i}` are the distinct thresholds at
-which *any* tree of the ensemble splits on :math:`i`.
+:math:`\theta_{i,1} < \theta_{i,2} < \dots < \theta_{i,m_i}` are the distinct
+thresholds at which *any* tree of the ensemble splits on :math:`i`.
 
 All formulations accept the ``epsilon`` and ``safety_floor`` keyword
 arguments of :ref:`Decision Tree Regression`; how the scope of ``epsilon``
 differs between them is described in :ref:`Split Thresholds and Exactness`.
 
-Shared split variables
-----------------------
+Mišić (``"misic"``)
+-------------------
 
-The ``"misic"`` and ``"misic_lazy"`` formulations share one binary variable per
-feature and distinct threshold of the ensemble:
+The trees share one binary variable per feature and distinct threshold of the
+ensemble:
 
 .. math::
 
-   z_{i,j} = 1 \iff x_i \le v_{i,j}.
+   z_{i,j} = 1 \iff x_i \le \theta_{i,j}.
 
 The variables of one feature are ordered and linked to the input variables by
 indicator constraints:
@@ -259,8 +256,8 @@ indicator constraints:
 
    \begin{align*}
    & z_{i,j} \le z_{i,j+1}, \\
-   & z_{i,j} = 1 \rightarrow x_i \le v_{i,j}, \\
-   & z_{i,j} = 0 \rightarrow x_i \ge v_{i,j} + \epsilon.
+   & z_{i,j} = 1 \rightarrow x_i \le \theta_{i,j}, \\
+   & z_{i,j} = 0 \rightarrow x_i \ge \theta_{i,j} + \epsilon.
    \end{align*}
 
 Every tree refers to the same variables. The number of binary variables
@@ -268,26 +265,23 @@ therefore grows with the number of distinct thresholds and not with the number
 of trees, and branching on one :math:`z_{i,j}` decides the corresponding split
 in all trees at once.
 
-Mišić (``"misic"``)
--------------------
-
-Each tree has one continuous variable :math:`y_l \in [0, 1]` per leaf with
+Each tree has one continuous variable :math:`\lambda_l \in [0, 1]` per leaf
+with
 
 .. math::
 
-   \sum_{l} y_l = 1,
+   \sum_{l} \lambda_l = 1,
 
 and each split node :math:`s` on feature :math:`i` at threshold
-:math:`v_{i,j}` links the leaves of its two subtrees to the shared split
+:math:`\theta_{i,j}` links the leaves of its two subtrees to the shared split
 variable:
 
 .. math::
 
-   \sum_{l \in \text{left}(s)} y_l \le z_{i,j}, \qquad
-   \sum_{l \in \text{right}(s)} y_l \le 1 - z_{i,j}.
+   \sum_{l \in \text{left}(s)} \lambda_l \le z_{i,j}, \qquad
+   \sum_{l \in \text{right}(s)} \lambda_l \le 1 - z_{i,j}.
 
-The output of the tree is :math:`\sum_l \text{val}_l\, y_l`. The variables
-:math:`y` are integral whenever :math:`z` is.
+The output of the tree is :math:`\sum_l \text{val}_l\, \lambda_l`.
 
 OCEAN (``"ocean"``)
 -------------------
@@ -319,9 +313,9 @@ fraction of interval :math:`j` below :math:`x_i`:
    \mu_{i,j} \ge \mu_{i,j+1}, \qquad
    x_i = \ell_i + \sum_j \Delta_{i,j}\, \mu_{i,j}.
 
-A flow going right at threshold :math:`v_{i,j}` requires the interval ending at
-:math:`v_{i,j}` to be crossed completely, a flow going left forbids entering
-the interval starting at :math:`v_{i,j}`:
+A flow going right at threshold :math:`\theta_{i,j}` requires the interval
+ending at :math:`\theta_{i,j}` to be crossed completely, a flow going left
+forbids entering the interval starting at :math:`\theta_{i,j}`:
 
 .. math::
 
@@ -330,10 +324,10 @@ the interval starting at :math:`v_{i,j}`:
 
 The output of the tree is the sum of the leaf values weighted by the leaf
 flows. With a positive :math:`\epsilon` the band
-:math:`(v_{i,j}, v_{i,j} + \epsilon)` becomes an interval of its own, and going
-right requires crossing it. The only binary variables are the per-level
-branching variables :math:`b_d`, and the formulation has no indicator
-constraints.
+:math:`(\theta_{i,j}, \theta_{i,j} + \epsilon)` becomes an interval of its
+own, and going right requires crossing it. The only binary variables are the
+per-level branching variables :math:`b_d`, and the formulation has no
+indicator constraints.
 
 Biggs–Perakis (``"biggs_perakis"``)
 ------------------------------------
@@ -366,7 +360,7 @@ Summary
    * - ``"leaf"``
      - one per leaf
      - output of the tree
-     - yes
+     - one per leaf, plus up to two per leaf and feature
      - no
    * - ``"misic"``, ``"misic_lazy"``
      - one per distinct threshold
@@ -399,10 +393,10 @@ Split Thresholds and Exactness
 ------------------------------
 
 With :math:`\epsilon = 0`, an input :math:`x_i` equal to a threshold
-:math:`v_{i,j}` satisfies the constraints of both branches, and the solver may
-take either one. Tree ensembles reuse the same threshold in many trees, and
-optimal solutions very often lie exactly on thresholds. The formulations
-differ in what happens then:
+:math:`\theta_{i,j}` satisfies the constraints of both branches, and the
+solver may take either one. Tree ensembles often reuse the same threshold in
+many trees, and optimal solutions very often lie exactly on thresholds. The
+formulations differ in what happens then:
 
 - In ``"misic"`` and ``"misic_lazy"`` the direction is decided once, by
   the shared variable :math:`z_{i,j}`, and every tree takes the same branch.
@@ -422,7 +416,8 @@ A positive ``epsilon`` removes the ambiguity at thresholds. Its scope differs:
   splits on the path taken by each tree.
 - In ``"misic"`` and ``"misic_lazy"`` it applies to every threshold of
   the ensemble, since every :math:`z_{i,j}` is linked to :math:`x_i`: the
-  interval :math:`(v_{i,j}, v_{i,j} + \epsilon)` is excluded for all thresholds.
+  interval :math:`(\theta_{i,j}, \theta_{i,j} + \epsilon)` is excluded for all
+  thresholds.
   The model becomes infeasible if an input variable cannot avoid all those
   intervals, and an :math:`\epsilon` below Gurobi's
   :external+gurobi:ref:`IntFeasTol <parameterintfeastol>` may not be enforced,
@@ -433,29 +428,11 @@ Because :math:`x` often sits exactly on a threshold, recomputing the prediction
 of the regression at the value of :math:`x` (as
 ``get_error()`` does) may route :math:`x` down the other branch. This is
 also the case with ``"misic"`` and ``"misic_lazy"``. To know which leaf
-each tree selected, read the leaf variables described below rather than
-comparing :math:`x` with the thresholds.
-
-Leaf Variables
---------------
-
-The object returned by :func:`add_predictor_constr
-<gurobi_ml.add_predictor_constr>` has a ``tree_leaves`` attribute for all
-formulations above, including ``"leaf"``. It is a tuple with one entry per
-tree. Each entry has two fields: ``variables``, a matrix variable of shape
-(number of inputs, number of reachable leaves), and ``nodes``, the node ids
-of those leaves in the original tree. ``variables[k, j]`` equals 1 when input
-``k`` reaches the leaf with node id ``nodes[j]``.
-
-The kind of variable depends on the formulation: binary variables for
-``"leaf"`` and ``"biggs_perakis"``, continuous leaf variables for ``"misic"``
-and ``"misic_lazy"``, and continuous leaf flows for ``"ocean"``. The
-continuous variables are integral in a solution of the MIP, but not in its
-relaxation.
-
-These variables can be used to formulate additional constraints on the
-leaves, for example to require that the solution falls into leaves that
-contain training data.
+each tree selected, read the leaf variables in the
+:py:attr:`tree_leaves
+<gurobi_ml.modeling.decision_tree.decision_tree_model.TreeLeavesAccessor.tree_leaves>`
+attribute of the returned object rather than comparing :math:`x` with the
+thresholds.
 
 Lazy Split Constraints
 ----------------------
@@ -466,10 +443,7 @@ constraints: their Gurobi :external+gurobi:ref:`Lazy <attrlazy>` attribute is
 set to 3.
 
 :cite:t:`Misic2020` observed that only a few of those constraints are needed to
-solve many instances, and generated them on demand. Lazy constraints give a
-similar effect without a callback: Gurobi keeps them out of the relaxation and
-adds them only when they are violated, including to cut off the root
-relaxation.
+solve many instances, and generated them on demand.
 
 The effect depends on the instance. It is usually beneficial when few
 branch-and-bound nodes are needed, since most split constraints then never
@@ -489,9 +463,12 @@ and should be confirmed on problems of the intended shape:
   optimal value is always attained by some input. ``"misic"`` was the fastest
   on large ensembles of deep trees, where its number of binary variables stays
   bounded by the number of distinct thresholds.
-- ``"leaf"`` and ``"biggs_perakis"`` were faster on ensembles whose trees share
-  few thresholds, and when additional constraints restrict the solution to a
-  small region of the input space.
+- ``"leaf"`` was the fastest when additional constraints restrict the
+  solution to a small region of the input space.
+- ``"biggs_perakis"`` was the fastest on random forests whose trees share few
+  thresholds, and slower than ``"leaf"`` elsewhere. It has the shortest build
+  time on large ensembles of deep trees, which matters when many models are
+  built and each is solved quickly.
 - ``"ocean"`` was the fastest when the features take very few distinct values,
   but it has the same exactness issue at thresholds as ``"leaf"``.
 - The difficulty of the optimization problem depends more on the trained
