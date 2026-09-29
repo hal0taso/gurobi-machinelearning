@@ -181,7 +181,7 @@ Tree Ensemble Formulations
 
 The formulation above models every tree of an ensemble on its own: the trees
 only interact through the input variables :math:`x`. Three formulations from
-the literature, and a variant of one of them, are available as alternatives.
+the literature are available as alternatives.
 ``"misic"``, ``"misic_lazy"`` and ``"ocean"`` model the ensemble as a whole,
 with variables shared by all trees; ``"biggs_perakis"`` models each tree on
 its own, like ``"leaf"``, with a tighter linear relaxation. They are selected
