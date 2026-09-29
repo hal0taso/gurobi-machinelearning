@@ -26,9 +26,29 @@ from ..base_predictor_constr import AbstractPredictorConstr
 
 
 class TreeLeaves(NamedTuple):
-    """Leaf variables of one tree: ``variables[k, j]`` is 1 (or carries the
-    unit flow) when input row ``k`` reaches leaf node ``nodes[j]``; ``j``
-    runs over the leaves reachable given the input variable bounds."""
+    """Leaf variables of one tree.
+
+    ``variables[k, j]`` equals 1 when input row ``k`` reaches the leaf with
+    node id ``nodes[j]``, and 0 otherwise. The columns ``j`` run over the
+    leaves that some input row can reach given the bounds of the input
+    variables; for a row that cannot reach leaf ``j``, the upper bound of
+    ``variables[k, j]`` is fixed to 0.
+
+    The kind of variable depends on the formulation: binary variables for
+    ``"leaf"`` and ``"biggs_perakis"``, continuous leaf weights for
+    ``"misic"`` and ``"misic_lazy"``, continuous leaf flows for ``"ocean"``.
+    The continuous variables take the values 0 and 1 in a solution of the
+    MIP, but can be fractional in its relaxation (e.g. with
+    :external+gurobi:py:meth:`Model.relax`).
+
+    Attributes
+    ----------
+    variables : :external+gurobi:py:class:`MVar`
+        Leaf variables, of shape (number of input rows, number of reachable
+        leaves).
+    nodes : ndarray
+        Node id of each reachable leaf in the tree.
+    """
 
     variables: gp.MVar
     nodes: np.ndarray
