@@ -43,9 +43,6 @@ class TestIssue496(unittest.TestCase):
     def test_numerical_issue_misic(self):
         self._check_numerical_issue_warning("misic")
 
-    def test_numerical_issue_parmentier_vidal(self):
-        self._check_numerical_issue_warning("parmentier_vidal")
-
     def test_numerical_issue_ocean(self):
         self._check_numerical_issue_warning("ocean")
 
@@ -67,9 +64,6 @@ class TestIssue496(unittest.TestCase):
 
     def test_misic_formulation_fix(self):
         self._check_safety_floor_fix("misic")
-
-    def test_parmentier_vidal_formulation_fix(self):
-        self._check_safety_floor_fix("parmentier_vidal")
 
     def test_ocean_formulation_fix(self):
         self._check_safety_floor_fix("ocean")

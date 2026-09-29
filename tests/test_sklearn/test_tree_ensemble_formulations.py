@@ -176,9 +176,6 @@ class TestCrossFormulationAgreement(unittest.TestCase):
     def test_diabetes_agreement_misic(self):
         self._diabetes_agreement("misic")
 
-    def test_diabetes_agreement_parmentier_vidal(self):
-        self._diabetes_agreement("parmentier_vidal")
-
     def test_diabetes_agreement_ocean(self):
         """Ocean sits between the families: the shared mu chain forbids
         per-tree tolerance-slop stacking (so ocean <= leaf when maximizing)
@@ -259,7 +256,7 @@ class TestCrossFormulationAgreement(unittest.TestCase):
                     ):
                         obj_misic, _, _ = self._optimize(predictor, X, "misic", sense)
                         tolerance = 3e-4 * max(1.0, abs(obj_misic))
-                        for formulation in ("parmentier_vidal",):
+                        for formulation in ("misic_lazy",):
                             objective, _, _ = self._optimize(
                                 predictor, X, formulation, sense
                             )
@@ -317,9 +314,6 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
     def test_epsilon_enforced_on_right_branch_misic(self):
         self._check_epsilon_enforced_on_right_branch("misic")
 
-    def test_epsilon_enforced_on_right_branch_parmentier_vidal(self):
-        self._check_epsilon_enforced_on_right_branch("parmentier_vidal")
-
     def test_epsilon_enforced_on_right_branch_ocean(self):
         self._check_epsilon_enforced_on_right_branch("ocean")
 
@@ -355,9 +349,6 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
 
     def test_thresholds_closer_than_epsilon_misic(self):
         self._check_thresholds_closer_than_epsilon("misic")
-
-    def test_thresholds_closer_than_epsilon_parmentier_vidal(self):
-        self._check_thresholds_closer_than_epsilon("parmentier_vidal")
 
     def test_thresholds_closer_than_epsilon_ocean(self):
         self._check_thresholds_closer_than_epsilon("ocean")
@@ -396,9 +387,6 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
     def test_fixed_feature_in_epsilon_band_is_feasible_misic(self):
         self._check_fixed_feature_in_epsilon_band("misic")
 
-    def test_fixed_feature_in_epsilon_band_is_feasible_parmentier_vidal(self):
-        self._check_fixed_feature_in_epsilon_band("parmentier_vidal")
-
     def test_fixed_feature_in_epsilon_band_is_feasible_ocean(self):
         self._check_fixed_feature_in_epsilon_band("ocean")
 
@@ -431,9 +419,6 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
     def test_unfixed_box_inside_epsilon_band_has_no_leaf_misic(self):
         self._check_unfixed_box_inside_epsilon_band("misic")
 
-    def test_unfixed_box_inside_epsilon_band_has_no_leaf_parmentier_vidal(self):
-        self._check_unfixed_box_inside_epsilon_band("parmentier_vidal")
-
     def test_unfixed_box_inside_epsilon_band_has_no_leaf_ocean(self):
         self._check_unfixed_box_inside_epsilon_band("ocean")
 
@@ -463,7 +448,7 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
         threshold of every tree, not only along the selected paths); passing
         a positive epsilon must warn. The other formulations stay silent."""
         params = {"OutputFlag": 0}
-        for formulation in ("misic", "parmentier_vidal"):
+        for formulation in ("misic", "misic_lazy"):
             with self.subTest(formulation=formulation):
                 with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
                     x = gpm.addMVar((1, 1), lb=0.0, ub=1.0)
@@ -520,9 +505,6 @@ class TestLifecycle(unittest.TestCase):
 
     def test_add_remove_misic(self):
         self._add_remove("misic")
-
-    def test_add_remove_parmentier_vidal(self):
-        self._add_remove("parmentier_vidal")
 
     def test_add_remove_ocean(self):
         self._add_remove("ocean")
@@ -629,50 +611,6 @@ class TestModelSize(unittest.TestCase):
                     # Two indicator constraints link each unfixed binary.
                     self.assertEqual(gpm.NumGenConstrs, 2 * nex * n_shared)
 
-    def test_parmentier_vidal_binaries_scale_with_depth(self):
-        rng = np.random.RandomState(0)
-        X = rng.randint(0, 5, size=(200, 4)).astype(float)
-        y = rng.uniform(size=200)
-        nex = 2
-
-        for n_estimators in (2, 6):
-            predictor = GradientBoostingRegressor(
-                n_estimators=n_estimators, max_depth=3, random_state=0
-            ).fit(X, y)
-
-            trees = _sklearn_trees(predictor)
-            thresholds = thresholds_by_feature(_tree_pairs(predictor))
-            n_shared = sum(len(values) for values in thresholds.values())
-            # One branching binary per tree and depth level of its splits.
-            n_levels = sum(int(tree.max_depth) for tree in trees)
-            n_nodes = sum(int(tree.node_count) for tree in trees)
-
-            with self.subTest(n_estimators=n_estimators):
-                params = {"OutputFlag": 0}
-                with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
-                    x = gpm.addMVar(
-                        (nex, X.shape[1]), lb=-GRB.INFINITY, ub=GRB.INFINITY
-                    )
-                    add_predictor_constr(
-                        gpm, predictor, x, formulation="parmentier_vidal"
-                    )
-                    gpm.update()
-
-                    # Shared split binaries plus one branching binary per
-                    # example, tree and depth level.
-                    self.assertEqual(gpm.NumBinVars, nex * (n_shared + n_levels))
-                    # Total: input + output + split binaries + branching
-                    # binaries + one continuous flow variable per example
-                    # and node.
-                    self.assertEqual(
-                        gpm.NumVars,
-                        nex * X.shape[1]
-                        + nex
-                        + nex * (n_shared + n_levels)
-                        + nex * n_nodes,
-                    )
-                    self.assertEqual(gpm.NumGenConstrs, 2 * nex * n_shared)
-
     def test_ocean_binaries_are_only_branching_binaries(self):
         rng = np.random.RandomState(0)
         X = rng.randint(0, 5, size=(200, 4)).astype(float)
@@ -736,20 +674,21 @@ class TestModelSize(unittest.TestCase):
 
                     # One binary leaf selector per example and leaf — like
                     # the naive leaf count — no indicator constraints and no
-                    # shared variables of any kind.
+                    # shared variables of any kind. Each tree is formulated
+                    # on its own, with its own output variable.
                     self.assertEqual(gpm.NumBinVars, nex * n_leaves)
                     self.assertEqual(gpm.NumGenConstrs, 0)
                     self.assertEqual(
                         gpm.NumVars,
-                        nex * X.shape[1] + nex + nex * n_leaves,
+                        nex * X.shape[1] + nex + nex * n_estimators + nex * n_leaves,
                     )
 
 
 class TestPrintStats(unittest.TestCase):
-    """The ensemble formulations print a block-structured size summary in
-    ``print_stats`` — they have no per-tree sub-estimators, and the shared
-    variables belong to no tree — while the per-tree leaf path keeps its
-    per-estimator table."""
+    """The ensemble formulations have no per-tree sub-estimators: like a
+    single decision tree, ``print_stats`` shows only the totals. The
+    per-tree formulations ("leaf", "biggs_perakis") keep the per-estimator
+    table."""
 
     def setUp(self):
         data = datasets.load_diabetes()
@@ -775,42 +714,52 @@ class TestPrintStats(unittest.TestCase):
             pred_constr.print_stats(file=output)
             return output.getvalue(), gpm.NumBinVars
 
-    def test_ensemble_formulations_print_block_table(self):
-        for formulation in ("misic", "parmentier_vidal", "ocean", "biggs_perakis"):
+    def test_ensemble_formulations_print_no_estimator_table(self):
+        for formulation in ("misic", "misic_lazy", "ocean"):
             with self.subTest(formulation=formulation):
                 output, _ = self._print_stats(formulation)
-                self.assertIn(f"Ensemble formulation '{formulation}': 3 trees", output)
-                # One table row per structural block: each tree plus the
-                # output linking rows.
-                self.assertIn("Block", output)
-                self.assertIn("tree0", output)
-                self.assertIn("tree2", output)
-                self.assertIn("linking", output)
-                # No per-estimator table, and no dangling empty header.
+                self.assertIn("Input has shape", output)
+                # No dangling empty per-estimator table.
                 self.assertNotIn("Estimator", output)
 
-    def test_table_binaries_match_model(self):
-        # The Binaries column must add up to the model's binary count, and
-        # only the shared-variable formulations print a shared row.
-        for formulation, has_shared in (("misic", True), ("biggs_perakis", False)):
+    def test_per_tree_formulations_keep_estimator_table(self):
+        for formulation in ("leaf", "biggs_perakis"):
             with self.subTest(formulation=formulation):
-                output, num_bin_vars = self._print_stats(formulation)
-                lines = output.splitlines()
-                start = next(i for i, s in enumerate(lines) if s.startswith("="))
-                rows = [
-                    line.split()
-                    for line in lines[start + 1 :]
-                    if line and not line.startswith("-")
-                ]
-                self.assertEqual(sum(int(tokens[-4]) for tokens in rows), num_bin_vars)
-                self.assertEqual(
-                    any(tokens[0] == "shared" for tokens in rows), has_shared
-                )
+                output, _ = self._print_stats(formulation)
+                self.assertIn("Estimator", output)
 
-    def test_leaf_keeps_estimator_table(self):
-        output, _ = self._print_stats("leaf")
-        self.assertIn("Estimator", output)
-        self.assertNotIn("Ensemble formulation", output)
+
+class TestMisicLazy(unittest.TestCase):
+    """``"misic_lazy"`` is ``"misic"`` with ``Lazy=3`` on the split-linking
+    rows, and only on those. Its optimum is checked against ``"misic"`` in
+    ``test_shared_formulations_agree``."""
+
+    def test_split_rows_are_lazy(self):
+        data = datasets.load_diabetes()
+        X, y = data["data"], data["target"]
+        predictors = [
+            GradientBoostingRegressor(n_estimators=6, max_depth=3, random_state=0),
+            RandomForestRegressor(n_estimators=4, max_depth=3, random_state=0),
+            DecisionTreeRegressor(max_depth=3, random_state=0),
+        ]
+        nex = 2
+        for predictor in predictors:
+            predictor.fit(X, y)
+            with self.subTest(predictor=type(predictor).__name__):
+                n_splits = sum(
+                    int((tree.children_left >= 0).sum())
+                    for tree in _sklearn_trees(predictor)
+                )
+                params = {"OutputFlag": 0}
+                with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
+                    # Unbounded inputs: no pruning, every split links both
+                    # of its subtrees.
+                    x = gpm.addMVar((nex, X.shape[1]), lb=-GRB.INFINITY)
+                    add_predictor_constr(gpm, predictor, x, formulation="misic_lazy")
+                    gpm.update()
+                    lazy = gpm.getAttr(GRB.Attr.Lazy, gpm.getConstrs())
+                    self.assertEqual(lazy.count(3), nex * 2 * n_splits)
+                    self.assertEqual(lazy.count(3) + lazy.count(0), len(lazy))
 
 
 if __name__ == "__main__":

@@ -57,7 +57,7 @@ def _leaf_intervals(tree):
 
 
 def add_misic_tree(
-    gp_model, split_vars, tree, _input, epsilon, name=None, safety_floor=0.0
+    gp_model, split_vars, tree, _input, epsilon, name=None, safety_floor=0.0, lazy=False
 ):
     """Add the Mišić formulation of one tree of an ensemble to gp_model.
 
@@ -85,6 +85,10 @@ def add_misic_tree(
         Name for the leaf variables.
     safety_floor : float, optional
         |SafetyFloorParam|
+    lazy : bool, optional
+        If True, mark the split-linking rows lazy (``Lazy=3``): Gurobi keeps
+        them out of the relaxation and adds them when they are violated,
+        including at the root.
 
     Returns
     -------
@@ -136,9 +140,11 @@ def add_misic_tree(
                 continue
             side = y[:, begin:end].sum(axis=1)
             if is_left:
-                gp_model.addConstr(side <= z_col)
+                split_row = gp_model.addConstr(side <= z_col)
             else:
-                gp_model.addConstr(side <= 1 - z_col)
+                split_row = gp_model.addConstr(side <= 1 - z_col)
+            if lazy:
+                split_row.setAttr(GRB.Attr.Lazy, 3)
 
     active_leaves = leaves_order[active_positions]
     values = tree["value"][active_leaves, :]

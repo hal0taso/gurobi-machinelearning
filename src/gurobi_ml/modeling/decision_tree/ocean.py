@@ -19,9 +19,10 @@ Reference: Parmentier & Vidal, "Optimal Counterfactual Explanations in
 Tree Ensembles" (2021), https://arxiv.org/abs/2106.06631, and its
 reference implementation https://github.com/vidalt/OCEAN.
 
-Unlike ``formulation="parmentier_vidal"`` (which reuses the ensemble's
-binary split variables), this variant follows the paper: the ordinal
-feature variables ``mu`` are **continuous** — the only binaries are the
+Each tree routes one unit of flow from its root to a leaf, with one
+continuous flow variable per node and one binary per depth level steering
+the flow left or right. As in the paper, the ordinal feature variables
+``mu`` shared by the trees are **continuous** — the only binaries are the
 per-tree, per-depth branching variables. For each feature, the thresholds
 plus the input variable's bounds partition its domain into intervals;
 ``mu[j]`` is the fraction of interval ``j`` that lies below the input
@@ -175,10 +176,9 @@ def add_ocean_tree(
 ):
     """Add the OCEAN flow formulation of one tree of an ensemble to gp_model.
 
-    Flow structure as in ``parmentier_vidal`` (per-node flows with
-    conservation and one branching binary per depth level), but the split
-    linking goes through the ensemble's continuous ordinal ``mu`` variables
-    instead of binary split variables.
+    Per-node flows with conservation and one branching binary per depth
+    level; the split linking goes through the ensemble's continuous
+    ordinal ``mu`` variables.
 
     Returns ``(expression, values)`` like the other tree builders.
     """

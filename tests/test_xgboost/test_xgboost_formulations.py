@@ -86,9 +86,6 @@ class TestXGBoosthModel(FixedRegressionModel):
     def test_diabetes_xgboost_misic(self):
         self._diabetes_xgboost_ensemble("misic")
 
-    def test_diabetes_xgboost_parmentier_vidal(self):
-        self._diabetes_xgboost_ensemble("parmentier_vidal")
-
     def test_diabetes_xgboost_ocean(self):
         self._diabetes_xgboost_ensemble("ocean")
 
@@ -132,9 +129,6 @@ class TestXGBoosthModel(FixedRegressionModel):
 
     def test_iris_xgboost_misic(self):
         self._iris_ensemble("misic")
-
-    def test_iris_xgboost_parmentier_vidal(self):
-        self._iris_ensemble("parmentier_vidal")
 
     def test_iris_xgboost_ocean(self):
         self._iris_ensemble("ocean")

@@ -140,9 +140,6 @@ class TestSklearnModel(FixedRegressionModel):
     def test_diabetes_sklearn_misic(self):
         self._diabetes_sklearn_ensemble("misic")
 
-    def test_diabetes_sklearn_parmentier_vidal(self):
-        self._diabetes_sklearn_ensemble("parmentier_vidal")
-
     def test_diabetes_sklearn_ocean(self):
         # Pipelines are excluded: their intermediate variables are unbounded
         # and the ocean formulation requires finite bounds on split features.
@@ -275,9 +272,6 @@ class TestSklearnModel(FixedRegressionModel):
 
     def test_circle_misic(self):
         self._circle_ensemble("misic")
-
-    def test_circle_parmentier_vidal(self):
-        self._circle_ensemble("parmentier_vidal")
 
     def test_circle_ocean(self):
         # See test_diabetes_sklearn_ocean for the pipeline exclusion.

@@ -58,9 +58,6 @@ class TestTreeLeavesLightGBM(unittest.TestCase):
     def test_selected_matches_pred_leaf_misic(self):
         self.selected_matches_pred_leaf("misic")
 
-    def test_selected_matches_pred_leaf_parmentier_vidal(self):
-        self.selected_matches_pred_leaf("parmentier_vidal")
-
     def test_selected_matches_pred_leaf_ocean(self):
         self.selected_matches_pred_leaf("ocean")
 

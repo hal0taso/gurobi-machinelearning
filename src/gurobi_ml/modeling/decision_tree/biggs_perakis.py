@@ -16,7 +16,8 @@
 """Per-tree constraints of the Biggs–Perakis projected formulation.
 
 Reference: Biggs & Perakis, "Tight Mixed-Integer Optimization Formulations
-for Prescriptive Trees" (2023), https://arxiv.org/abs/2302.14744 — the
+for Prescriptive Trees", Machine Learning 114 (2025),
+https://arxiv.org/abs/2302.14744 — the
 "projected union of polyhedra" formulation, the best performer in the
 paper's experiments.
 
@@ -51,14 +52,16 @@ from .misic import _leaf_intervals
 
 
 def add_biggs_perakis_tree(
-    gp_model, split_vars, tree, _input, epsilon, name=None, safety_floor=0.0
+    gp_model, tree, _input, epsilon, name=None, safety_floor=0.0
 ):
-    """Add the projected formulation of one tree of an ensemble to gp_model.
+    """Add the projected formulation of one tree to gp_model.
 
-    ``split_vars`` is unused (the formulation shares no ensemble-level
-    variables) and accepted only for the common builder signature.
+    The formulation shares no variables between trees, so each tree of an
+    ensemble is formulated on its own, like the "leaf" formulation.
 
-    Returns ``(expression, values)`` like the other tree builders.
+    Returns ``(expression, values, leaves)``: the tree's output as a linear
+    expression, the values of the reachable leaves and their
+    :py:class:`TreeLeaves`.
     """
     nex = _input.shape[0]
 

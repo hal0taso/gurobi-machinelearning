@@ -17,9 +17,6 @@ class TestSafetyFloor(unittest.TestCase):
     def test_safety_floor_misic(self):
         self._check_safety_floor("misic")
 
-    def test_safety_floor_parmentier_vidal(self):
-        self._check_safety_floor("parmentier_vidal")
-
     def test_safety_floor_ocean(self):
         self._check_safety_floor("ocean")
 
@@ -95,9 +92,6 @@ class TestSafetyFloor(unittest.TestCase):
     def test_warning_no_safety_floor_misic(self):
         self._check_warning_no_safety_floor("misic")
 
-    def test_warning_no_safety_floor_parmentier_vidal(self):
-        self._check_warning_no_safety_floor("parmentier_vidal")
-
     def test_warning_no_safety_floor_ocean(self):
         self._check_warning_no_safety_floor("ocean")
 
@@ -129,9 +123,6 @@ class TestSafetyFloor(unittest.TestCase):
 
     def test_warning_custom_tolerance_misic(self):
         self._check_warning_custom_tolerance("misic")
-
-    def test_warning_custom_tolerance_parmentier_vidal(self):
-        self._check_warning_custom_tolerance("parmentier_vidal")
 
     def test_warning_custom_tolerance_ocean(self):
         self._check_warning_custom_tolerance("ocean")
@@ -175,9 +166,6 @@ class TestSafetyFloor(unittest.TestCase):
 
     def test_safety_floor_negative_misic(self):
         self._check_safety_floor_negative("misic")
-
-    def test_safety_floor_negative_parmentier_vidal(self):
-        self._check_safety_floor_negative("parmentier_vidal")
 
     def test_safety_floor_negative_ocean(self):
         self._check_safety_floor_negative("ocean")

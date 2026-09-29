@@ -62,6 +62,11 @@ def add_gradient_boosting_regressor_constr(
     safety_floor : float, optional
         |SafetyFloorParam|
 
+    Other Parameters
+    ----------------
+    formulation : str, optional
+        |TreeFormulationParam|
+
     Returns
     -------
     GradientBoostingRegressorConstr
@@ -137,7 +142,7 @@ class GradientBoostingRegressorConstr(
 
         formulation = kwargs.get("formulation", "leaf")
         if formulation in ENSEMBLE_FORMULATIONS:
-            leaves_and_stats = _add_sklearn_tree_ensemble_formulation(
+            self._tree_leaves = _add_sklearn_tree_ensemble_formulation(
                 model,
                 [predictor.estimators_[i][0] for i in range(predictor.n_estimators_)],
                 np.full(predictor.n_estimators_, predictor.learning_rate),
@@ -149,7 +154,6 @@ class GradientBoostingRegressorConstr(
                 safety_floor=self.safety_floor,
                 constant=predictor.init_.constant_[0][0],
             )
-            self._tree_leaves, self._ensemble_stats = leaves_and_stats
             return
 
         if self._no_debug:
@@ -204,12 +208,8 @@ class GradientBoostingRegressorConstr(
         super().print_stats(abbrev=abbrev, file=file)
         if abbrev or self._no_debug:
             return
-        print(file=file)
 
-        if self._ensemble_stats is not None:
-            # Ensemble formulations have no per-tree sub-estimators (and
-            # their shared variables belong to no tree) — print the size
-            # decomposition by structural block instead.
-            self._print_ensemble_stats(file=file)
-        elif self.estimators_:
+        # Ensemble formulations have no per-tree sub-estimators.
+        if self.estimators_:
+            print(file=file)
             self._print_container_steps("Estimator", self.estimators_, file=file)

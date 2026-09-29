@@ -15,8 +15,8 @@
 
 """Ensemble-level tree formulations built on shared ordinal split variables.
 
-The formulations dispatched here differ from the per-tree ``"leaf"`` and
-``"paths"`` formulations of
+The formulations dispatched here differ from the per-tree ``"leaf"``,
+``"biggs_perakis"`` and ``"paths"`` formulations of
 :py:class:`gurobi_ml.modeling.decision_tree.AbstractTreeEstimator` in that the
 split binaries ``z[f, j]`` ("is ``x_f <= v_j``?") exist once per (feature,
 threshold) for the whole ensemble — all trees reference the same variables.
@@ -25,21 +25,20 @@ with the number of trees, and the trees are coupled combinatorially through
 the shared binaries instead of only through the continuous input variables.
 """
 
+from functools import partial
 from warnings import warn
 
 import numpy as np
 
-from .biggs_perakis import add_biggs_perakis_tree
 from .misic import add_misic_tree
 from .ocean import OrdinalMuVariables, add_ocean_tree
-from .parmentier_vidal import add_parmentier_vidal_tree
 from .split_variables import SplitVariables
 
 _TREE_BUILDERS = {
     "misic": add_misic_tree,
-    "parmentier_vidal": add_parmentier_vidal_tree,
+    # Mišić with its split-linking rows marked lazy (Lazy=3).
+    "misic_lazy": partial(add_misic_tree, lazy=True),
     "ocean": add_ocean_tree,
-    "biggs_perakis": add_biggs_perakis_tree,
 }
 
 #: Formulations handled by :py:func:`add_tree_ensemble_formulation`.
@@ -98,45 +97,17 @@ def add_tree_ensemble_formulation(
     -------
     tuple of TreeLeaves
         The leaf variables of each tree.
-    dict
-        Size statistics of the formulation, decomposed by structural
-        block (the shared variables, each tree, the linking rows) —
-        consumed by ``print_stats``.
     """
     try:
         tree_builder = _TREE_BUILDERS[formulation]
     except KeyError:
         raise ValueError(f"Unknown formulation: {formulation}") from None
 
-    def _snapshot():
-        gp_model.update()
-        return np.array(
-            [
-                gp_model.NumVars,
-                gp_model.NumBinVars,
-                gp_model.NumConstrs,
-                gp_model.NumQConstrs,
-                gp_model.NumGenConstrs,
-            ]
-        )
-
-    def _block(before, after):
-        vars_, binaries, linear, quadratic, general = (after - before).tolist()
-        return {
-            "vars": vars_,
-            "binaries": binaries,
-            "linear": linear,
-            "quadratic": quadratic,
-            "general": general,
-        }
-
-    snapshot = _snapshot()
-
     # Only the shared binary split variables make epsilon global: they take
     # a value whether or not a tree traverses that split. The epsilon of
-    # "biggs_perakis" lives in the per-tree leaf boxes and that of "ocean"
-    # in the flow linking, so both act path-wise like the leaf baseline.
-    if epsilon > 0.0 and formulation in ("misic", "parmentier_vidal"):
+    # "ocean" lives in the flow linking, so it acts path-wise like the leaf
+    # baseline.
+    if epsilon > 0.0 and formulation in ("misic", "misic_lazy"):
         warn(
             f"epsilon={epsilon} with the '{formulation}' formulation applies "
             "globally: the band (t, t + epsilon) of every threshold of the "
@@ -150,20 +121,11 @@ def add_tree_ensemble_formulation(
         )
 
     # The "ocean" variant shares continuous ordinal interval variables
-    # instead of binary split variables; "biggs_perakis" shares nothing —
-    # its trees couple through the input variables only.
-    if formulation == "biggs_perakis":
-        split_vars = None
-    else:
-        shared_variables = (
-            OrdinalMuVariables if formulation == "ocean" else SplitVariables
-        )
-        split_vars = shared_variables(
-            gp_model, trees, _input, epsilon, _name_var, safety_floor
-        )
-    previous, snapshot = snapshot, _snapshot()
-    shared_block = _block(previous, snapshot)
-    tree_blocks = []
+    # instead of binary split variables.
+    shared_variables = OrdinalMuVariables if formulation == "ocean" else SplitVariables
+    split_vars = shared_variables(
+        gp_model, trees, _input, epsilon, _name_var, safety_floor
+    )
 
     outdim = output.shape[1]
     output_lb = np.full(outdim, float(constant))
@@ -181,8 +143,6 @@ def add_tree_ensemble_formulation(
             safety_floor=safety_floor,
         )
         tree_leaves.append(leaves)
-        previous, snapshot = snapshot, _snapshot()
-        tree_blocks.append(_block(previous, snapshot))
         total = total + weight * expression
         output_lb += np.minimum(
             weight * values.min(axis=0), weight * values.max(axis=0)
@@ -195,11 +155,4 @@ def add_tree_ensemble_formulation(
     gp_model.addConstr(output_coef * output >= output_lb)
     gp_model.addConstr(output_coef * output <= output_ub)
 
-    stats = {
-        "formulation": formulation,
-        "n_trees": len(trees),
-        "shared": shared_block,
-        "trees": tree_blocks,
-        "linking": _block(snapshot, _snapshot()),
-    }
-    return tuple(tree_leaves), stats
+    return tuple(tree_leaves)

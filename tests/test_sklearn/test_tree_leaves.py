@@ -75,9 +75,6 @@ class TestTreeLeaves(unittest.TestCase):
     def test_selected_matches_apply_misic(self):
         self.selected_matches_apply("misic")
 
-    def test_selected_matches_apply_parmentier_vidal(self):
-        self.selected_matches_apply("parmentier_vidal")
-
     def test_selected_matches_apply_ocean(self):
         self.selected_matches_apply("ocean")
 
@@ -106,9 +103,6 @@ class TestTreeLeaves(unittest.TestCase):
 
     def test_multiple_input_rows_misic(self):
         self.multiple_input_rows("misic")
-
-    def test_multiple_input_rows_parmentier_vidal(self):
-        self.multiple_input_rows("parmentier_vidal")
 
     def test_multiple_input_rows_ocean(self):
         self.multiple_input_rows("ocean")
