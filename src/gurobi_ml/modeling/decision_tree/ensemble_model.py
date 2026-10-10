@@ -13,16 +13,18 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Ensemble-level tree formulations built on shared ordinal split variables.
+"""Ensemble-level tree formulations built on shared ordinal variables.
 
 The formulations dispatched here differ from the per-tree ``"leaf"``,
 ``"biggs_perakis"`` and ``"paths"`` formulations of
-:py:class:`gurobi_ml.modeling.decision_tree.AbstractTreeEstimator` in that the
-split binaries ``z[f, j]`` ("is ``x_f <= v_j``?") exist once per (feature,
-threshold) for the whole ensemble — all trees reference the same variables.
-The binary count therefore grows with the number of distinct thresholds, not
-with the number of trees, and the trees are coupled combinatorially through
-the shared binaries instead of only through the continuous input variables.
+:py:class:`gurobi_ml.modeling.decision_tree.AbstractTreeEstimator` in that
+their ordinal variables exist once per (feature, threshold) for the whole
+ensemble — all trees reference the same variables: the split binaries
+``z[f, j]`` ("is ``x_f <= v_j``?") of ``"misic"`` and ``"misic_lazy"``, and
+the continuous interval variables ``mu[f, j]`` of ``"ocean"``. The trees are
+therefore coupled through the shared variables instead of only through the
+continuous input variables. For ``"misic"``, the binary count grows with the
+number of distinct thresholds, not with the number of trees.
 """
 
 from functools import partial
