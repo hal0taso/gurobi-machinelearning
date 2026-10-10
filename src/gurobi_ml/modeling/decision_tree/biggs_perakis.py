@@ -21,14 +21,14 @@ https://arxiv.org/abs/2302.14744 — the
 "projected union of polyhedra" formulation, the best performer in the
 paper's experiments.
 
-Per tree: one binary selector per reachable leaf with ``sum(z) == 1`` and,
-for every feature the tree splits on, the two aggregated box constraints
+Per tree: one binary selector per reachable leaf with ``sum(delta) == 1``
+and, for every feature the tree splits on, the two aggregated box constraints
 
-    sum_l ub[l, i] * z[l]  >=  x[i]  >=  sum_l lb[l, i] * z[l]
+    sum_l ub[l, i] * delta[l]  >=  x[i]  >=  sum_l lb[l, i] * delta[l]
 
 where ``lb``/``ub`` are the leaf boxes (with the same epsilon and
 ``feature_is_fixed`` semantics as the leaf formulation) clipped to the
-input variable bounds. When ``z`` selects one leaf the input lies in that
+input variable bounds. When ``delta`` selects one leaf the input lies in that
 leaf's box; the LP relaxation is the projected convex hull of the boxes'
 union — locally ideal per tree. Trees are coupled through the input
 variables only (no shared split variables), so epsilon acts path-wise as
@@ -47,7 +47,6 @@ from .decision_tree_model import (
     TreeLeaves,
     _compute_reachability,
 )
-from .misic import _leaf_intervals
 
 
 def add_biggs_perakis_tree(
@@ -80,47 +79,47 @@ def add_biggs_perakis_tree(
                 "feature ranges) or use another formulation."
             )
 
-    leaves_order, first, last = _leaf_intervals(tree)
+    # Collect leaf nodes
+    leafs = tree["children_left"] < 0
+    leaf_nodes = leafs.nonzero()[0]
 
-    reachability, node_lb, node_ub = _compute_reachability(
-        gp_model,
-        tree,
-        _input,
-        feature_is_fixed,
-        epsilon,
-        leaves_order,
-        safety_floor,
+    reachability_matrix, node_lb, node_ub = _compute_reachability(
+        gp_model, tree, _input, feature_is_fixed, epsilon, leaf_nodes, safety_floor
     )
 
-    active_positions = reachability.any(axis=0).nonzero()[0]
-    if active_positions.size == 0:
+    # Drop leaves that no example can reach — they contribute nothing.
+    any_reachable = reachability_matrix.any(axis=0)  # (n_leaves,)
+    active_leaf_nodes = leaf_nodes[any_reachable]
+    active_reachability = reachability_matrix[:, any_reachable]  # (nex, n_active)
+    n_active = len(active_leaf_nodes)
+
+    if n_active == 0:
         raise ValueError(
             "No reachable leaf nodes given the current input variable bounds; "
             "the decision tree constraint would be infeasible."
         )
-    active_leaves = leaves_order[active_positions]
 
-    z = gp_model.addMVar((nex, active_positions.size), vtype=GRB.BINARY, name=name)
-    z[~reachability[:, active_positions]].setAttr(GRB.Attr.UB, 0.0)
+    leafs_vars = gp_model.addMVar((nex, n_active), vtype=GRB.BINARY, name=name)
+    leafs_vars[~active_reachability].setAttr(GRB.Attr.UB, 0.0)
 
-    gp_model.addConstr(z.sum(axis=1) == 1)
+    gp_model.addConstr(leafs_vars.sum(axis=1) == 1)
 
     for f in split_features:
         # Leaf boxes clipped to each example's input bounds: coefficients
         # stay finite and the selected leaf's box never cuts the example's
         # own domain.
         box_lb = np.clip(
-            node_lb[f, active_leaves][None, :],
+            node_lb[f, active_leaf_nodes][None, :],
             input_lb[:, [f]],
             input_ub[:, [f]],
         )
         box_ub = np.clip(
-            node_ub[f, active_leaves][None, :],
+            node_ub[f, active_leaf_nodes][None, :],
             input_lb[:, [f]],
             input_ub[:, [f]],
         )
-        gp_model.addConstr((z * box_lb).sum(axis=1) <= _input[:, f])
-        gp_model.addConstr((z * box_ub).sum(axis=1) >= _input[:, f])
+        gp_model.addConstr((leafs_vars * box_lb).sum(axis=1) <= _input[:, f])
+        gp_model.addConstr((leafs_vars * box_ub).sum(axis=1) >= _input[:, f])
 
-    values = tree["value"][active_leaves, :]
-    return z @ values, values, TreeLeaves(z, active_leaves)
+    values = tree["value"][active_leaf_nodes, :]
+    return leafs_vars @ values, values, TreeLeaves(leafs_vars, active_leaf_nodes)
