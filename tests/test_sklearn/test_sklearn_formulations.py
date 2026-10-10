@@ -116,14 +116,10 @@ class TestSklearnModel(FixedRegressionModel):
                 continue
 
             onecase = cases.get_case(regressor)
-            # epsilon=1e-5 keeps solver vertices off the thresholds (at
-            # epsilon=0 a vertex on a threshold can be float32-routed to the
-            # other side by predict). PolynomialFeatures pipelines are the
-            # exception: their derived features have attainable ranges
-            # narrower than any useful epsilon, and the ensemble
-            # formulations apply epsilon globally — so they run at the
-            # default epsilon=0.
-            epsilon = 0.0 if onecase["nonconvex"] else 1e-5
+            # 1e-5 keeps solver vertices off thresholds, where float32
+            # predict may take the other branch. misic applies epsilon
+            # globally, too wide for PolynomialFeatures' narrow features.
+            epsilon = 0.0 if formulation == "misic" and onecase["nonconvex"] else 1e-5
             kwargs = {
                 "float_type": np.float32,
                 "epsilon": epsilon,
@@ -260,7 +256,7 @@ class TestSklearnModel(FixedRegressionModel):
             onecase = cases.get_case(regressor)
             X = onecase["data"]
             # See _diabetes_sklearn_ensemble for the epsilon policy.
-            epsilon = 0.0 if onecase["nonconvex"] else 1e-5
+            epsilon = 0.0 if formulation == "misic" and onecase["nonconvex"] else 1e-5
             kwargs = {"formulation": formulation, "epsilon": epsilon}
 
             self.do_one_case(onecase, X, 5, "all", **kwargs)
