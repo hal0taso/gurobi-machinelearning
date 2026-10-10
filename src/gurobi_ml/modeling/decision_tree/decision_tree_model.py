@@ -154,7 +154,13 @@ def _compute_reachability(
     ``feature_is_fixed`` semantics as the constraints) intersects the
     example's input variable bounds.
 
-    Returns a boolean array of shape ``(n_examples, len(nodes))``.
+    Returns
+    -------
+    reachability : np.ndarray
+        Boolean array of shape ``(n_examples, len(nodes))``.
+    node_lb, node_ub : np.ndarray
+        Lower and upper bounds of the input box routed to each node of the
+        tree, of shape ``(n_features, capacity)``.
     """
     (node_lb, node_ub) = _compute_leafs_bounds(
         gp_model, tree, feature_is_fixed, epsilon, safety_floor
@@ -169,7 +175,7 @@ def _compute_reachability(
         reachability &= (input_ub[:, f, None] >= selected_lb[f, None, :]) & (
             input_lb[:, f, None] <= selected_ub[f, None, :]
         )
-    return reachability
+    return reachability, node_lb, node_ub
 
 
 def _leafs_formulation(
@@ -190,20 +196,11 @@ def _leafs_formulation(
     # Get fixed features we don't want to apply the epsilon for them
     feature_is_fixed = (_input.lb == _input.ub).all(axis=0)
 
-    (node_lb, node_ub) = _compute_leafs_bounds(
-        gp_model, tree, feature_is_fixed, epsilon, safety_floor
+    reachability_matrix, node_lb, node_ub = _compute_reachability(
+        gp_model, tree, _input, feature_is_fixed, epsilon, leaf_nodes, safety_floor
     )
     input_ub = _input.getAttr(GRB.Attr.UB)
     input_lb = _input.getAttr(GRB.Attr.LB)
-
-    # Reachability: compute (nex, n_leaves) without materializing a (nex, n_features, n_leaves) array.
-    leaf_lb = node_lb[:, leaf_nodes]  # (n_features, n_leaves)
-    leaf_ub = node_ub[:, leaf_nodes]  # (n_features, n_leaves)
-    reachability_matrix = np.ones((nex, leaf_nodes.size), dtype=bool)
-    for f in range(n_features):
-        reachability_matrix &= (input_ub[:, f, None] >= leaf_lb[f, None, :]) & (
-            input_lb[:, f, None] <= leaf_ub[f, None, :]
-        )
 
     # Drop leaves that no example can reach — they contribute nothing.
     any_reachable = reachability_matrix.any(axis=0)  # (n_leaves,)

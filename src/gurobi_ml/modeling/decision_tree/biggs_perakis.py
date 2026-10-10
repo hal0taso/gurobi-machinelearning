@@ -45,7 +45,6 @@ from gurobipy import GRB
 
 from .decision_tree_model import (
     TreeLeaves,
-    _compute_leafs_bounds,
     _compute_reachability,
 )
 from .misic import _leaf_intervals
@@ -83,7 +82,7 @@ def add_biggs_perakis_tree(
 
     leaves_order, first, last = _leaf_intervals(tree)
 
-    reachability = _compute_reachability(
+    reachability, node_lb, node_ub = _compute_reachability(
         gp_model,
         tree,
         _input,
@@ -106,9 +105,6 @@ def add_biggs_perakis_tree(
 
     gp_model.addConstr(z.sum(axis=1) == 1)
 
-    (node_lb, node_ub) = _compute_leafs_bounds(
-        gp_model, tree, feature_is_fixed, epsilon, safety_floor
-    )
     for f in split_features:
         # Leaf boxes clipped to each example's input bounds: coefficients
         # stay finite and the selected leaf's box never cuts the example's

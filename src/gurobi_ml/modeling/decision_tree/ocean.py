@@ -198,7 +198,7 @@ def add_ocean_tree(
             order.append(right)
     nodes = np.array(order)
 
-    reachability = _compute_reachability(
+    reachability, _, _ = _compute_reachability(
         gp_model,
         tree,
         _input,

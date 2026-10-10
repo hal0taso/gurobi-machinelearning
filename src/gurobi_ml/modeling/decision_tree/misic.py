@@ -101,7 +101,7 @@ def add_misic_tree(
 
     leaves_order, first, last = _leaf_intervals(tree)
 
-    reachability = _compute_reachability(
+    reachability, _, _ = _compute_reachability(
         gp_model,
         tree,
         _input,
