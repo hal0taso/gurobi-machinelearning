@@ -457,19 +457,17 @@ class AbstractTreeEstimator(TreeLeavesAccessor, AbstractPredictorConstr):
                 self._safety_floor,
             )
         elif self._formulation == "biggs_perakis":
-            from .biggs_perakis import add_biggs_perakis_tree
+            from .biggs_perakis import _biggs_perakis_formulation
 
-            expression, values, leaves = add_biggs_perakis_tree(
+            leaves = _biggs_perakis_formulation(
                 self.gp_model,
-                self._tree,
                 self.input,
+                self.output,
+                self._tree,
                 self._epsilon,
-                name=self._name_var("leafs"),
-                safety_floor=self._safety_floor,
+                self._name_var,
+                self._safety_floor,
             )
-            self.gp_model.addConstr(self.output == expression)
-            self.gp_model.addConstr(self.output <= np.max(values, axis=0))
-            self.gp_model.addConstr(self.output >= np.min(values, axis=0))
             self._tree_leaves = (leaves,)
         elif self._formulation in ENSEMBLE_FORMULATIONS:
             # A lone decision tree is an ensemble of one tree.

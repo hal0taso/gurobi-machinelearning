@@ -49,17 +49,15 @@ from .decision_tree_model import (
 )
 
 
-def add_biggs_perakis_tree(
-    gp_model, tree, _input, epsilon, name=None, safety_floor=0.0
+def _biggs_perakis_formulation(
+    gp_model, _input, output, tree, epsilon, _name_var, safety_floor=0.0
 ):
-    """Add the projected formulation of one tree to gp_model.
+    """Formulate decision tree using the Biggs–Perakis projected formulation
 
     The formulation shares no variables between trees, so each tree of an
     ensemble is formulated on its own, like the "leaf" formulation.
 
-    Returns ``(expression, values, leaves)``: the tree's output as a linear
-    expression, the values of the reachable leaves and their
-    :py:class:`TreeLeaves`.
+    Returns the :py:class:`TreeLeaves` of the tree.
     """
     nex = _input.shape[0]
 
@@ -99,7 +97,9 @@ def add_biggs_perakis_tree(
             "the decision tree constraint would be infeasible."
         )
 
-    leafs_vars = gp_model.addMVar((nex, n_active), vtype=GRB.BINARY, name=name)
+    leafs_vars = gp_model.addMVar(
+        (nex, n_active), vtype=GRB.BINARY, name=_name_var("leafs")
+    )
     leafs_vars[~active_reachability].setAttr(GRB.Attr.UB, 0.0)
 
     gp_model.addConstr(leafs_vars.sum(axis=1) == 1)
@@ -121,5 +121,10 @@ def add_biggs_perakis_tree(
         gp_model.addConstr((leafs_vars * box_lb).sum(axis=1) <= _input[:, f])
         gp_model.addConstr((leafs_vars * box_ub).sum(axis=1) >= _input[:, f])
 
+    # Use only active leaves for bounds — tighter than using all leaves.
     values = tree["value"][active_leaf_nodes, :]
-    return leafs_vars @ values, values, TreeLeaves(leafs_vars, active_leaf_nodes)
+    gp_model.addConstr(output == leafs_vars @ values)
+    gp_model.addConstr(output <= np.max(values, axis=0))
+    gp_model.addConstr(output >= np.min(values, axis=0))
+
+    return TreeLeaves(leafs_vars, active_leaf_nodes)
