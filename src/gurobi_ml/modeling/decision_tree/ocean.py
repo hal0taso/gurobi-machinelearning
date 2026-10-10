@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Paper-faithful Parmentier–Vidal flow formulation (OCEAN).
+"""Parmentier–Vidal (OCEAN) tree-ensemble formulation.
 
 Reference: Parmentier & Vidal, "Optimal Counterfactual Explanations in
 Tree Ensembles" (2021), https://arxiv.org/abs/2106.06631, and its
@@ -42,8 +42,7 @@ identical to the plain one.
 
 The interval widths appear as constraint coefficients, so every feature
 used in a split must have **finite bounds** (the paper assumes bounded
-feature domains); a :py:exc:`ValueError` is raised otherwise. This is a
-prototype for the formulation benchmark and is self-contained on purpose.
+feature domains); a :py:exc:`ValueError` is raised otherwise.
 """
 
 from warnings import warn
