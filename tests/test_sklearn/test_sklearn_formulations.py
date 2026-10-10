@@ -90,6 +90,9 @@ class TestSklearnModel(FixedRegressionModel):
         """Run the tree cases of the diabetes suite with an ensemble
         formulation.
 
+        The default ``"leaf"`` formulation is tested along with the other
+        predictors in ``test_diabetes_sklearn`` and ``test_circle``.
+
         A separate test method per formulation puts the formulation's name
         in the tox report and, since ``setUp`` reseeds the generator, every
         formulation is tested on identical example sets. See the epsilon
