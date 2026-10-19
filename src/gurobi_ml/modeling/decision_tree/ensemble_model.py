@@ -32,9 +32,8 @@ from warnings import warn
 
 import numpy as np
 
-from .misic import add_misic_tree
+from .misic import SplitVariables, add_misic_tree
 from .ocean import IncrementalMuVariables, add_ocean_tree
-from .split_variables import SplitVariables
 
 _TREE_BUILDERS = {
     "misic": add_misic_tree,
