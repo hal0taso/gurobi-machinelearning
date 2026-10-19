@@ -40,11 +40,10 @@ class SplitVariables:
         ``z = 1  =>  x <= v_j``    and    ``z = 0  =>  x >= v_j + epsilon``.
 
     Thresholds falling outside the bounds of an input variable fix the
-    corresponding binary instead of adding the linking constraints.  Features
-    whose input column is fixed (``lb == ub`` for every example) get no
-    linking at all: their binaries are fixed by comparing the constant value
-    to the threshold, without applying ``epsilon`` — mirroring the
-    ``feature_is_fixed`` handling of the leaf formulation.
+    corresponding binary instead of adding the linking constraints.  For a
+    fixed feature (``lb == ub``), every binary is fixed this way, by comparing
+    the constant value to the threshold without applying ``epsilon`` — like
+    the ``feature_is_fixed`` handling of the leaf formulation.
 
     Parameters
     ----------
@@ -111,14 +110,9 @@ class SplitVariables:
             if values.size > 1:
                 gp_model.addConstr(z[:, :-1] <= z[:, 1:])
 
-            if self.feature_is_fixed[f]:
-                go_left = input_lb[:, [f]] <= values[None, :]
-                z[go_left].setAttr(GRB.Attr.LB, 1.0)
-                z[~go_left].setAttr(GRB.Attr.UB, 0.0)
-                continue
-
-            # Thresholds outside the input bounds fix the binaries; only the
-            # remaining ones need linking constraints to the input variables.
+            # Thresholds outside the input bounds fix the binaries (including
+            # all fixed features); only the remaining ones need linking
+            # constraints to the input variables.
             always_left = input_ub[:, [f]] <= values[None, :]
             never_left = input_lb[:, [f]] > values[None, :]
             z[always_left].setAttr(GRB.Attr.LB, 1.0)
