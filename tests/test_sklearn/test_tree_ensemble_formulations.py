@@ -1,23 +1,29 @@
-"""Tests for the ensemble-level tree formulations (currently ``"misic"``).
+"""Tests for the tree ensemble formulations ``"misic"``, ``"misic_lazy"``,
+``"ocean"`` and ``"biggs_perakis"``.
 
 Beyond the fixed-input equivalence tests in test_sklearn_formulations.py,
 this module checks:
 
-- cross-formulation agreement: the shared-z optimum is always reproduced by
+- cross-formulation agreement: the misic optimum is always reproduced by
   ``predict`` on one of the threshold cells the solution can represent; the
   leaf optimum dominates it and equals it whenever the leaf solution does not
   tie a threshold duplicated across trees (at such a tie the leaf
   formulation may mix branch choices across trees — a combination no real
   input reproduces — while the shared ``z`` forbids the mix by construction);
-- existing-coverage parity for ``epsilon`` and fixed features, lifecycle
-  (``remove()`` restores the model, unknown formulation raises);
-- model-size validation: with unbounded inputs the binary count equals the
-  number of distinct split thresholds — independent of the number of trees.
+  ocean and biggs_perakis lie between misic and leaf;
+- existing-coverage parity for ``epsilon`` and fixed features, and the
+  warning of misic for a positive epsilon;
+- lifecycle: ``remove()`` restores the model, an unknown formulation raises,
+  ocean and biggs_perakis require finite bounds;
+- model size: with unbounded inputs the misic binary count equals the number
+  of distinct split thresholds — independent of the number of trees;
+- ``print_stats`` output, and the lazy rows of misic_lazy.
 """
 
 import io
 import unittest
 import warnings
+from types import SimpleNamespace
 
 import gurobipy as gp
 import numpy as np
@@ -36,7 +42,7 @@ from ..tree_ensemble import (
 
 # Cross-formulation comparisons must run at the default epsilon=0: a positive
 # epsilon has a different scope per formulation — path-wise in "leaf" but
-# ensemble-wise (every threshold, all trees) in the shared-z formulations —
+# ensemble-wise (every threshold, all trees) in misic —
 # so the feasible sets, and hence the optimal objectives, may legitimately
 # differ. Positive epsilons are additionally treacherous below Gurobi's
 # IntFeasTol (default 1e-5): the indicator linking is translated into SOS1
@@ -71,12 +77,56 @@ def _tree_pairs(predictor):
 
 
 class TestCrossFormulationAgreement(unittest.TestCase):
-    """All formulations must find the same optimal value on tiny instances."""
+    """Compare the optima of the formulations on small diabetes models.
 
-    def _optimize(self, predictor, X, formulation, sense):
+    ``setUpClass`` solves every formulation once per case; the tests only
+    compare the solutions.
+    """
+
+    FORMULATIONS = ("leaf", "misic", "ocean", "biggs_perakis")
+
+    @classmethod
+    def setUpClass(cls):
+        data = datasets.load_diabetes()
+        X, y = data["data"], data["target"]
+        cls.cases = []
+        for random_state in (0, 1):
+            predictors = [
+                GradientBoostingRegressor(
+                    n_estimators=5, max_depth=3, random_state=random_state
+                ),
+                RandomForestRegressor(
+                    n_estimators=5, max_depth=3, random_state=random_state
+                ),
+                DecisionTreeRegressor(max_depth=4, random_state=random_state),
+            ]
+            for predictor in predictors:
+                predictor.fit(X, y)
+                # Per tree: for the duplicated-threshold ties. Per feature:
+                # for the cells a solution can represent.
+                tree_pairs = _tree_pairs(predictor)
+                thresholds = thresholds_by_feature(tree_pairs)
+                for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
+                    solutions = {
+                        formulation: cls._optimize(predictor, X, formulation, sense)
+                        for formulation in cls.FORMULATIONS
+                    }
+                    cls.cases.append(
+                        SimpleNamespace(
+                            random_state=random_state,
+                            predictor=predictor,
+                            sense=sense,
+                            solutions=solutions,
+                            tree_pairs=tree_pairs,
+                            thresholds=thresholds,
+                        )
+                    )
+
+    @staticmethod
+    def _optimize(predictor, X, formulation, sense):
         """Solve max/min of the prediction over the box of feature ranges.
 
-        Returns ``(objective, x_star, feas_tol)``.
+        Returns ``(status, max_vio, feas_tol, objective, x_star)``.
         """
         params = {"OutputFlag": 0}
         with gp.Env(params=params) as env, gp.Model(env=env) as gpm:
@@ -90,22 +140,32 @@ class TestCrossFormulationAgreement(unittest.TestCase):
             except GurobiError as error:
                 if error.errno == 10010:
                     warnings.warn(UserWarning("Limited license"))
-                    self.skipTest("Model too large for limited license")
+                    raise unittest.SkipTest("Model too large for limited license")
                 raise
-            self.assertEqual(gpm.Status, GRB.OPTIMAL)
-            # At epsilon=0 there is no band for a solution to hide in; any
-            # violation above FeasibilityTol means a solver tolerance is
-            # masking a wrong-side threshold again (see the EPSILON note).
-            self.assertLessEqual(gpm.MaxVio, gpm.Params.FeasibilityTol)
-            return gpm.ObjVal, np.array(x.X[0, :]), gpm.Params.FeasibilityTol
+            return (
+                gpm.Status,
+                gpm.MaxVio,
+                gpm.Params.FeasibilityTol,
+                gpm.ObjVal,
+                np.array(x.X[0, :]),
+            )
 
-    def _assert_predict_reproduces(self, predictor, objective, x_star, feas_tol):
+    def _solution(self, case, formulation):
+        """Check that formulation was solved and return
+        ``(objective, x_star, feas_tol)``."""
+        status, max_vio, feas_tol, objective, x_star = case.solutions[formulation]
+        self.assertEqual(status, GRB.OPTIMAL, msg=formulation)
+        # At epsilon=0 there is no band for a solution to hide in; any
+        # violation above FeasibilityTol means a solver tolerance is masking
+        # a wrong-side threshold again (see the EPSILON note).
+        self.assertLessEqual(max_vio, feas_tol, msg=formulation)
+        return objective, x_star, feas_tol
+
+    def _assert_predict_reproduces(self, case, objective, x_star, feas_tol):
         """The MIP optimum must be attained by ``predict`` on one of the
         threshold cells the solution can represent."""
-        cells = representable_cells(
-            x_star, thresholds_by_feature(_tree_pairs(predictor)), feas_tol
-        )
-        predictions = predictor.predict(cells)
+        cells = representable_cells(x_star, case.thresholds, feas_tol)
+        predictions = case.predictor.predict(cells)
         tolerance = 1e-4 * (1.0 + abs(objective))
         self.assertLessEqual(
             np.min(np.abs(predictions - objective)),
@@ -113,166 +173,81 @@ class TestCrossFormulationAgreement(unittest.TestCase):
             msg="MIP optimum not reproduced by predict on any representable cell",
         )
 
-    def _diabetes_predictors(self, random_state):
-        data = datasets.load_diabetes()
-        X, y = data["data"], data["target"]
-        return X, [
-            GradientBoostingRegressor(
-                n_estimators=5, max_depth=3, random_state=random_state
-            ).fit(X, y),
-            RandomForestRegressor(
-                n_estimators=5, max_depth=3, random_state=random_state
-            ).fit(X, y),
-            DecisionTreeRegressor(max_depth=4, random_state=random_state).fit(X, y),
-        ]
-
-    def _diabetes_agreement(self, formulation):
-        """Compare the given shared-z formulation against the leaf baseline
-        (one test method per formulation, so failures name it)."""
-        for random_state in (17, 42):
-            X, predictors = self._diabetes_predictors(random_state)
-            for predictor in predictors:
-                for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
-                    with self.subTest(
-                        predictor=type(predictor).__name__,
-                        random_state=random_state,
-                        sense=sense,
-                    ):
-                        obj_leaf, x_leaf, feas_tol = self._optimize(
-                            predictor, X, "leaf", sense
-                        )
-                        objective, x_star, _ = self._optimize(
-                            predictor, X, formulation, sense
-                        )
-                        # The shared z couples the trees, so a shared-z
-                        # optimum always corresponds to a real input.
-                        self._assert_predict_reproduces(
-                            predictor, objective, x_star, feas_tol
-                        )
-
-                        # Each solve is proven optimal within the default
-                        # relative MIPGap of 1e-4.
-                        tolerance = 3e-4 * max(1.0, abs(objective))
-
-                        # Every shared-z-feasible point is leaf-feasible, so
-                        # the leaf optimum dominates.
-                        if sense == GRB.MAXIMIZE:
-                            self.assertGreaterEqual(obj_leaf, objective - tolerance)
-                        else:
-                            self.assertLessEqual(obj_leaf, objective + tolerance)
-
-                        # Without a duplicated-threshold tie the leaf
-                        # formulation cannot mix branches across trees: the
-                        # optima must agree and the leaf optimum must also
-                        # correspond to a real input.
-                        if not ties_duplicated_threshold(
-                            _tree_pairs(predictor), x_leaf, feas_tol
-                        ):
-                            self.assertLessEqual(abs(obj_leaf - objective), tolerance)
-                            self._assert_predict_reproduces(
-                                predictor, obj_leaf, x_leaf, feas_tol
-                            )
-
     def test_diabetes_agreement_misic(self):
-        self._diabetes_agreement("misic")
+        """The misic optimum is reproduced by predict and bounded by the leaf
+        optimum; without a duplicated-threshold tie the two agree."""
+        for case in self.cases:
+            with self.subTest(
+                predictor=type(case.predictor).__name__,
+                random_state=case.random_state,
+                sense=case.sense,
+            ):
+                obj_leaf, x_leaf, feas_tol = self._solution(case, "leaf")
+                objective, x_star, _ = self._solution(case, "misic")
+                # The shared z couples the trees, so a misic optimum always
+                # corresponds to a real input.
+                self._assert_predict_reproduces(case, objective, x_star, feas_tol)
+
+                # Each solve is proven optimal within the default relative
+                # MIPGap of 1e-4.
+                tolerance = 3e-4 * max(1.0, abs(objective))
+
+                # Every misic-feasible point is leaf-feasible, so the leaf
+                # optimum dominates.
+                if case.sense == GRB.MAXIMIZE:
+                    self.assertGreaterEqual(obj_leaf, objective - tolerance)
+                else:
+                    self.assertLessEqual(obj_leaf, objective + tolerance)
+
+                # Without a duplicated-threshold tie the leaf formulation
+                # cannot mix branches across trees: the optima must agree and
+                # the leaf optimum must also correspond to a real input.
+                if not ties_duplicated_threshold(case.tree_pairs, x_leaf, feas_tol):
+                    self.assertLessEqual(abs(obj_leaf - objective), tolerance)
+                    self._assert_predict_reproduces(case, obj_leaf, x_leaf, feas_tol)
+
+    def _check_between_misic_and_leaf(self, formulation):
+        """Sandwich misic <= formulation <= leaf (maximize; reversed when
+        minimizing).
+
+        Every misic solution is feasible for formulation, and every
+        formulation solution for leaf. At a threshold, ocean, biggs_perakis
+        and leaf all let each tree pick any leaf whose closed box contains x,
+        so in exact arithmetic they equal leaf. Only misic always gives a
+        point that predict reproduces, so the predict check skips
+        duplicated-threshold ties."""
+        for case in self.cases:
+            with self.subTest(
+                predictor=type(case.predictor).__name__,
+                random_state=case.random_state,
+                sense=case.sense,
+            ):
+                obj_leaf, _, feas_tol = self._solution(case, "leaf")
+                obj_misic, _, _ = self._solution(case, "misic")
+                objective, x_star, _ = self._solution(case, formulation)
+                tolerance = 3e-4 * max(1.0, abs(objective))
+                if case.sense == GRB.MAXIMIZE:
+                    self.assertGreaterEqual(objective, obj_misic - tolerance)
+                    self.assertLessEqual(objective, obj_leaf + tolerance)
+                else:
+                    self.assertLessEqual(objective, obj_misic + tolerance)
+                    self.assertGreaterEqual(objective, obj_leaf - tolerance)
+                if not ties_duplicated_threshold(case.tree_pairs, x_star, feas_tol):
+                    self._assert_predict_reproduces(case, objective, x_star, feas_tol)
 
     def test_diabetes_agreement_ocean(self):
-        """Ocean sits between the families: the shared mu chain forbids
-        per-tree tolerance-slop stacking (so ocean <= leaf when maximizing)
-        but still allows branch mixing at exact ties (so misic <= ocean).
-        Predict-reproduction holds only without a duplicated-threshold tie.
-        The paper's margin (our epsilon) restores tie coupling."""
-        for random_state in (17, 42):
-            X, predictors = self._diabetes_predictors(random_state)
-            for predictor in predictors:
-                for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
-                    with self.subTest(
-                        predictor=type(predictor).__name__,
-                        random_state=random_state,
-                        sense=sense,
-                    ):
-                        obj_leaf, _, feas_tol = self._optimize(
-                            predictor, X, "leaf", sense
-                        )
-                        objective, x_star, _ = self._optimize(
-                            predictor, X, "ocean", sense
-                        )
-                        tolerance = 3e-4 * max(1.0, abs(objective))
-                        self.assertLessEqual(abs(obj_leaf - objective), tolerance)
-                        if not ties_duplicated_threshold(
-                            _tree_pairs(predictor), x_star, feas_tol
-                        ):
-                            self._assert_predict_reproduces(
-                                predictor, objective, x_star, feas_tol
-                            )
+        self._check_between_misic_and_leaf("ocean")
 
     def test_diabetes_agreement_biggs_perakis(self):
-        """Exact-arithmetic: biggs_perakis equals leaf (same per-tree closure
-        boxes); under solver tolerances only the sandwich
-        misic <= biggs_perakis <= leaf (maximize) is sound, since
-        per-tree-row encodings may stack independent sub-tolerance
-        violations differently."""
-        for random_state in (17, 42):
-            X, predictors = self._diabetes_predictors(random_state)
-            for predictor in predictors:
-                for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
-                    with self.subTest(
-                        predictor=type(predictor).__name__,
-                        random_state=random_state,
-                        sense=sense,
-                    ):
-                        obj_leaf, _, feas_tol = self._optimize(
-                            predictor, X, "leaf", sense
-                        )
-                        obj_misic, _, _ = self._optimize(predictor, X, "misic", sense)
-                        objective, x_star, _ = self._optimize(
-                            predictor, X, "biggs_perakis", sense
-                        )
-                        tolerance = 3e-4 * max(1.0, abs(objective))
-                        if sense == GRB.MAXIMIZE:
-                            self.assertGreaterEqual(objective, obj_misic - tolerance)
-                            self.assertLessEqual(objective, obj_leaf + tolerance)
-                        else:
-                            self.assertLessEqual(objective, obj_misic + tolerance)
-                            self.assertGreaterEqual(objective, obj_leaf - tolerance)
-                        if not ties_duplicated_threshold(
-                            _tree_pairs(predictor), x_star, feas_tol
-                        ):
-                            self._assert_predict_reproduces(
-                                predictor, objective, x_star, feas_tol
-                            )
-
-    def test_shared_formulations_agree(self):
-        """The shared-z formulations solve the same problem: their optima
-        must always agree (no knife-edge exception applies)."""
-        for random_state in (17, 42):
-            X, predictors = self._diabetes_predictors(random_state)
-            for predictor in predictors:
-                for sense in (GRB.MAXIMIZE, GRB.MINIMIZE):
-                    with self.subTest(
-                        predictor=type(predictor).__name__,
-                        random_state=random_state,
-                        sense=sense,
-                    ):
-                        obj_misic, _, _ = self._optimize(predictor, X, "misic", sense)
-                        tolerance = 3e-4 * max(1.0, abs(obj_misic))
-                        for formulation in ("misic_lazy",):
-                            objective, _, _ = self._optimize(
-                                predictor, X, formulation, sense
-                            )
-                            self.assertLessEqual(
-                                abs(obj_misic - objective),
-                                tolerance,
-                                msg=formulation,
-                            )
+        self._check_between_misic_and_leaf("biggs_perakis")
 
 
 def _add_predictor_constr_silently(gpm, predictor, x, **kwargs):
     """``add_predictor_constr`` suppressing the global-epsilon warning.
 
-    Used by tests that intentionally combine a positive epsilon with an
-    ensemble formulation; the warning itself is asserted in
-    ``test_positive_epsilon_warns_for_ensemble_formulation``.
+    Used by tests that intentionally combine a positive epsilon with misic;
+    the warning itself is asserted in
+    ``test_positive_epsilon_warns_for_misic``.
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
@@ -443,7 +418,7 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
                     formulation=formulation,
                 )
 
-    def test_positive_epsilon_warns_for_ensemble_formulation(self):
+    def test_positive_epsilon_warns_for_misic(self):
         """The shared binary split variables apply epsilon globally (every
         threshold of every tree, not only along the selected paths); passing
         a positive epsilon must warn. The other formulations stay silent."""
@@ -487,7 +462,9 @@ class TestEpsilonAndFixedFeatures(unittest.TestCase):
 
 
 class TestLifecycle(unittest.TestCase):
-    """``remove()`` restores the model; unknown formulations raise."""
+    """``remove()`` restores the model; unknown formulations raise. The new
+    formulations add variables through other paths (e.g. variables shared by
+    the trees), so check that ``remove()`` still takes all of them."""
 
     def setUp(self):
         data = datasets.load_diabetes()
@@ -651,7 +628,7 @@ class TestModelSize(unittest.TestCase):
                         + nex * n_intervals,
                     )
 
-    def test_biggs_perakis_binaries_are_leaf_selectors(self):
+    def test_biggs_perakis_binaries_are_leaf_variables(self):
         rng = np.random.RandomState(0)
         X = rng.randint(0, 5, size=(200, 4)).astype(float)
         y = rng.uniform(size=200)
@@ -731,8 +708,7 @@ class TestPrintStats(unittest.TestCase):
 
 class TestMisicLazy(unittest.TestCase):
     """``"misic_lazy"`` is ``"misic"`` with ``Lazy=3`` on the split-linking
-    rows, and only on those. Its optimum is checked against ``"misic"`` in
-    ``test_shared_formulations_agree``."""
+    rows, and only on those."""
 
     def test_split_rows_are_lazy(self):
         data = datasets.load_diabetes()

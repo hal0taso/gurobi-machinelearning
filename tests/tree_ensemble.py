@@ -32,10 +32,10 @@ def representable_cells(x_star, thresholds, feas_tol):
     """Points of every threshold cell that x_star can represent.
 
     The solution's own cell, plus both adjacent cells for every coordinate
-    that ties with a split threshold (the solver may have taken either branch
-    at such a knife edge). Frameworks compare in float32 (or against float32
-    thresholds), so the tie window and the points probing both sides of a
-    threshold must be one float32 ulp wide — a float64 ulp would be erased.
+    that ties a split threshold. Probing both sides covers either branch the
+    solver may have taken, without depending on how each framework breaks
+    ties. The probes are one float32 ulp away from the threshold, since the
+    frameworks compare in float32, where a float64 ulp would vanish.
     """
     candidates = []
     for feature, value in enumerate(x_star):
