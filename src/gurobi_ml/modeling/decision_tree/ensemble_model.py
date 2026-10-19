@@ -35,15 +35,16 @@ import numpy as np
 from .misic import SplitVariables, add_misic_tree
 from .ocean import IncrementalMuVariables, add_ocean_tree
 
-_TREE_BUILDERS = {
-    "misic": add_misic_tree,
+# Formulation name -> (variables shared by the trees, per-tree builder).
+_FORMULATIONS = {
+    "misic": (SplitVariables, add_misic_tree),
     # Mišić with its split-linking rows marked lazy (Lazy=3).
-    "misic_lazy": partial(add_misic_tree, lazy=True),
-    "ocean": add_ocean_tree,
+    "misic_lazy": (SplitVariables, partial(add_misic_tree, lazy=True)),
+    "ocean": (IncrementalMuVariables, add_ocean_tree),
 }
 
 #: Formulations handled by :py:func:`add_tree_ensemble_formulation`.
-ENSEMBLE_FORMULATIONS = tuple(_TREE_BUILDERS)
+ENSEMBLE_FORMULATIONS = tuple(_FORMULATIONS)
 
 
 def add_tree_ensemble_formulation(
@@ -100,7 +101,7 @@ def add_tree_ensemble_formulation(
         The leaf variables of each tree.
     """
     try:
-        tree_builder = _TREE_BUILDERS[formulation]
+        shared_variables, tree_builder = _FORMULATIONS[formulation]
     except KeyError:
         raise ValueError(f"Unknown formulation: {formulation}") from None
 
@@ -121,12 +122,7 @@ def add_tree_ensemble_formulation(
             UserWarning,
         )
 
-    # The "ocean" variant shares continuous incremental variables
-    # instead of binary split variables.
-    shared_variables = (
-        IncrementalMuVariables if formulation == "ocean" else SplitVariables
-    )
-    split_vars = shared_variables(
+    shared_vars = shared_variables(
         gp_model, trees, _input, epsilon, _name_var, safety_floor
     )
 
@@ -138,7 +134,7 @@ def add_tree_ensemble_formulation(
     for i, (tree, weight) in enumerate(zip(trees, weights)):
         expression, values, leaves = tree_builder(
             gp_model,
-            split_vars,
+            shared_vars,
             tree,
             _input,
             epsilon,

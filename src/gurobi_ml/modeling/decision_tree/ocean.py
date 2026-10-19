@@ -172,7 +172,7 @@ class IncrementalMuVariables:
 
 
 def add_ocean_tree(
-    gp_model, split_vars, tree, _input, epsilon, name=None, safety_floor=0.0
+    gp_model, shared_vars, tree, _input, epsilon, name=None, safety_floor=0.0
 ):
     """Add the OCEAN flow formulation of one tree of an ensemble to gp_model.
 
@@ -202,7 +202,7 @@ def add_ocean_tree(
         gp_model,
         tree,
         _input,
-        split_vars.feature_is_fixed,
+        shared_vars.feature_is_fixed,
         epsilon,
         nodes,
         safety_floor,
@@ -248,7 +248,7 @@ def add_ocean_tree(
             flow_right = flow[:, column[right]]
             conservation = conservation + flow_right
             gp_model.addConstr(flow_right <= 1 - level)
-        split_vars.link_split(
+        shared_vars.link_split(
             gp_model, feature[node], threshold[node], flow_left, flow_right
         )
         gp_model.addConstr(flow[:, column[node]] == conservation)

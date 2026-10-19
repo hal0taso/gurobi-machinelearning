@@ -175,7 +175,14 @@ def _leaf_intervals(tree):
 
 
 def add_misic_tree(
-    gp_model, split_vars, tree, _input, epsilon, name=None, safety_floor=0.0, lazy=False
+    gp_model,
+    shared_vars,
+    tree,
+    _input,
+    epsilon,
+    name=None,
+    safety_floor=0.0,
+    lazy=False,
 ):
     """Add the Mišić formulation of one tree of an ensemble to gp_model.
 
@@ -191,7 +198,7 @@ def add_misic_tree(
     ----------
     gp_model : :external+gurobi:py:class:`Model`
         The gurobipy model where the predictor should be inserted.
-    split_vars : SplitVariables
+    shared_vars : SplitVariables
         The shared split binaries of the ensemble.
     tree : dict
         The decision tree to model.
@@ -223,7 +230,7 @@ def add_misic_tree(
         gp_model,
         tree,
         _input,
-        split_vars.feature_is_fixed,
+        shared_vars.feature_is_fixed,
         epsilon,
         leaves_order,
         safety_floor,
@@ -247,7 +254,7 @@ def add_misic_tree(
     feature = tree["feature"]
     threshold = tree["threshold"]
     for node in (children_left >= 0).nonzero()[0]:
-        z_col = split_vars.column(feature[node], threshold[node])
+        z_col = shared_vars.column(feature[node], threshold[node])
         for child, is_left in (
             (children_left[node], True),
             (children_right[node], False),
