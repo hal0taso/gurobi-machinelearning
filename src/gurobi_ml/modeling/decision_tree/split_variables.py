@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Shared ordinal split variables for tree-ensemble MIP formulations."""
+"""Shared ordered split variables for tree-ensemble MIP formulations."""
 
 from warnings import warn
 
@@ -29,7 +29,7 @@ def _clamp_threshold(threshold, safety_floor):
 
 
 class SplitVariables:
-    """Shared ordinal split binaries ``z[f, j]`` of a tree ensemble.
+    """Shared ordered split binaries ``z[f, j]`` of a tree ensemble.
 
     For every example ``k``, feature ``f`` and distinct split threshold
     ``v_j`` (sorted increasingly, collected over all trees of the ensemble)

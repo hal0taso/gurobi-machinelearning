@@ -21,16 +21,17 @@ reference implementation https://github.com/vidalt/OCEAN.
 
 Each tree routes one unit of flow from its root to a leaf, with one
 continuous flow variable per node and one binary per depth level steering
-the flow left or right. As in the paper, the ordinal feature variables
-``mu`` shared by the trees are **continuous** — the only binaries are the
+the flow left or right. As in the paper, the feature variables ``mu``
+shared by the trees are **continuous** — the only binaries are the
 per-tree, per-depth branching variables. For each feature, the thresholds
-plus the input variable's bounds partition its domain into intervals;
-``mu[j]`` is the fraction of interval ``j`` that lies below the input
-value, the ``mu`` chain is nonincreasing, and the input is recovered
-exactly by ``x == lb + sum_j mu[j] * width[j]`` — no indicator or big-M
-constraints. Flow through a split forces the adjacent ``mu`` values:
-going right forces the interval below the threshold to be fully crossed,
-going left forbids entering the interval above it.
+plus the input variable's bounds partition its domain into intervals, and
+``mu`` follows the incremental formulation: ``mu[j]`` is the fraction of
+interval ``j`` that lies below the input value, ``mu`` is nonincreasing in
+``j``, and the input is recovered exactly by
+``x == lb + sum_j mu[j] * width[j]`` — no indicator or big-M constraints.
+Flow through a split forces the adjacent ``mu`` values: going right forces
+the interval below the threshold to be fully crossed, going left forbids
+entering the interval above it.
 
 A positive ``epsilon`` is absorbed into that partition rather than into
 the linking rows: each threshold ``v`` contributes the two boundaries
@@ -53,8 +54,8 @@ from gurobipy import GRB
 from .decision_tree_model import TreeLeaves, _compute_reachability
 
 
-class OrdinalMuVariables:
-    """Continuous ordinal interval variables shared by the whole ensemble."""
+class IncrementalMuVariables:
+    """Continuous incremental variables shared by the whole ensemble."""
 
     def __init__(self, gp_model, trees, _input, epsilon, _name_var, safety_floor=0.0):
         self._safety_floor = safety_floor
@@ -135,7 +136,7 @@ class OrdinalMuVariables:
             mu = gp_model.addMVar(
                 (nex, boundaries.size + 1), ub=1.0, name=_name_var(f"mu[{f}]")
             )
-            # x consumes the intervals in order: the chain is nonincreasing.
+            # x fills the intervals in order: mu is nonincreasing.
             gp_model.addConstr(mu[:, :-1] >= mu[:, 1:])
             # Exact recovery of the input from the interval fractions.
             gp_model.addConstr(
@@ -148,7 +149,7 @@ class OrdinalMuVariables:
             self._right_pos[f] = right_pos
 
     def link_split(self, gp_model, feature, threshold, flow_left, flow_right):
-        """Force the mu chain consistent with a split's flow variables.
+        """Force mu consistent with a split's flow variables.
 
         Going left requires ``x <= v_j``, so the interval starting at
         ``v_j`` must not be entered; going right requires
@@ -177,9 +178,9 @@ def add_ocean_tree(
 
     Per-node flows with conservation and one branching binary per depth
     level; the split linking goes through the ensemble's continuous
-    ordinal ``mu`` variables.
+    incremental ``mu`` variables.
 
-    Returns ``(expression, values)`` like the other tree builders.
+    Returns ``(expression, values, leaves)`` like the other tree builders.
     """
     nex = _input.shape[0]
     children_left = tree["children_left"]

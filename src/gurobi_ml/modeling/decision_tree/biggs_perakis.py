@@ -21,19 +21,20 @@ https://arxiv.org/abs/2302.14744 — the
 "projected union of polyhedra" formulation, the best performer in the
 paper's experiments.
 
-Per tree: one binary selector per reachable leaf with ``sum(delta) == 1``
-and, for every feature the tree splits on, the two aggregated box constraints
+Per tree: one binary leaf variable per reachable leaf with
+``sum(delta) == 1`` and, for every feature the tree splits on, the two
+aggregated box constraints
 
     sum_l ub[l, i] * delta[l]  >=  x[i]  >=  sum_l lb[l, i] * delta[l]
 
 where ``lb``/``ub`` are the leaf boxes (with the same epsilon and
 ``feature_is_fixed`` semantics as the leaf formulation) clipped to the
 input variable bounds. When ``delta`` selects one leaf the input lies in that
-leaf's box; the LP relaxation is the projected convex hull of the boxes'
-union — locally ideal per tree. Trees are coupled through the input
-variables only (no shared split variables), so epsilon acts path-wise as
-in the leaf baseline and, at exact threshold ties, trees may branch
-independently (tie-uncoupled family).
+leaf's box; the LP relaxation, projected onto ``x``, is the convex hull of
+the union of the leaf boxes — locally ideal per tree. Trees are coupled
+through the input variables only (no shared split variables), so epsilon
+acts path-wise as in the leaf baseline and, at a threshold, trees may take
+different branches.
 
 The box bounds appear as constraint coefficients, so every feature used in
 a split must have **finite bounds**; a :py:exc:`ValueError` is raised

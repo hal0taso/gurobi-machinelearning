@@ -13,18 +13,18 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Ensemble-level tree formulations built on shared ordinal variables.
+"""Ensemble-level tree formulations built on shared ordered variables.
 
 The formulations dispatched here differ from the per-tree ``"leaf"``,
 ``"biggs_perakis"`` and ``"paths"`` formulations of
 :py:class:`gurobi_ml.modeling.decision_tree.AbstractTreeEstimator` in that
-their ordinal variables exist once per (feature, threshold) for the whole
+their ordered variables exist once per (feature, threshold) for the whole
 ensemble — all trees reference the same variables: the split binaries
 ``z[f, j]`` ("is ``x_f <= v_j``?") of ``"misic"`` and ``"misic_lazy"``, and
-the continuous interval variables ``mu[f, j]`` of ``"ocean"``. The trees are
-therefore coupled through the shared variables instead of only through the
-continuous input variables. For ``"misic"``, the binary count grows with the
-number of distinct thresholds, not with the number of trees.
+the continuous incremental variables ``mu[f, j]`` of ``"ocean"``. The trees
+are therefore coupled through the shared variables instead of only through
+the continuous input variables. For ``"misic"``, the binary count grows with
+the number of distinct thresholds, not with the number of trees.
 """
 
 from functools import partial
@@ -33,7 +33,7 @@ from warnings import warn
 import numpy as np
 
 from .misic import add_misic_tree
-from .ocean import OrdinalMuVariables, add_ocean_tree
+from .ocean import IncrementalMuVariables, add_ocean_tree
 from .split_variables import SplitVariables
 
 _TREE_BUILDERS = {
@@ -122,9 +122,11 @@ def add_tree_ensemble_formulation(
             UserWarning,
         )
 
-    # The "ocean" variant shares continuous ordinal interval variables
+    # The "ocean" variant shares continuous incremental variables
     # instead of binary split variables.
-    shared_variables = OrdinalMuVariables if formulation == "ocean" else SplitVariables
+    shared_variables = (
+        IncrementalMuVariables if formulation == "ocean" else SplitVariables
+    )
     split_vars = shared_variables(
         gp_model, trees, _input, epsilon, _name_var, safety_floor
     )
